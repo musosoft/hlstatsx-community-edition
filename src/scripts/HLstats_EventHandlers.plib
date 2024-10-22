@@ -509,37 +509,110 @@ sub doEvent_EnterGame
 			
 			if ($g_stdin == 0 && $g_servers{$s_addr}->{connect_announce} > 0)
 			{
+				# Define color codes
+				my $color_default = "\x01";
+				my $color_gray   = "\x07CCCCCC";  # Gray color (spectator color)
+				my $color_green  = "\x04";  # Green color
+
 				my $player_rank = $player->getRank();
-				if ($player->{country} ne "")
-				{					
+
+				if ($player->{country} ne "" && $player->{city} ne "") {
 					my $msg = "";
-					if ($player_rank == 0)
-					{
-						$msg = sprintf("Player %s has connected from %s", $player->{name},$player->{country});
+					if ($player_rank == 0) {
+						$msg = sprintf(
+							"%sPlayer %s%s%s has connected from %s%s%s, %s%s%s",
+							$color_default,
+							$color_gray, $player->{name}, $color_default,
+							$color_green, $player->{country}, $color_default,
+							$color_green, $player->{city}, $color_default
+						);
 					}
-					elsif ($player->{skill} == 1000)
-					{
-						$msg = sprintf("New player %s has connected from %s",$player->{name},$player->{country});
+					elsif ($player->{skill} == 1000) {
+						$msg = sprintf(
+							"%sNew player %s%s%s has connected from %s%s%s, %s%s%s",
+							$color_default,
+							$color_gray, $player->{name}, $color_default,
+							$color_green, $player->{country}, $color_default,
+							$color_green, $player->{city}, $color_default
+						);
 					}
-					elsif ($g_ranktype ne "kills")
-					{
-						$msg = sprintf("%s (Pos %s with %s points) has connected from %s",$player->{name},$player_rank,$player->{skill},$player->{country});
+					elsif ($g_ranktype ne "kills") {
+						$msg = sprintf(
+							"%s%s%s%s (Pos %s with %s points) has connected from %s%s%s, %s%s%s",
+							$color_default,
+							$color_gray, $player->{name}, $color_default,
+							$player_rank, $player->{skill},
+							$color_green, $player->{country}, $color_default,
+							$color_green, $player->{city}, $color_default
+						);
 					}
-					else
-					{
-						$msg = sprintf("%s (Pos %s with %s kills) has connected from %s",$player->{name},$player_rank,$player->{total_kills},$player->{country});
+					else {
+						$msg = sprintf(
+							"%s%s%s%s (Pos %s with %s kills) has connected from %s%s%s, %s%s%s",
+							$color_default,
+							$color_gray, $player->{name}, $color_default,
+							$player_rank, $player->{total_kills},
+							$color_green, $player->{country}, $color_default,
+							$color_green, $player->{city}, $color_default
+						);
 					}
 					$g_servers{$s_addr}->messageAll($msg, $player->{playerid}, 1);
 				}
-				else
-				{
-					if ($g_ranktype ne "kills")
-					{
-						$msg = sprintf("%s (Pos %s with %s points) has connected",$player->{name},$player_rank,$player->{skill});
+				elsif ($player->{country} ne "") {
+					my $msg = "";
+					if ($player_rank == 0) {
+						$msg = sprintf(
+							"%sPlayer %s%s%s has connected from %s%s%s",
+							$color_default,
+							$color_gray, $player->{name}, $color_default,
+							$color_green, $player->{country}, $color_default
+						);
 					}
-					else
-					{
-						$msg = sprintf("%s (Pos %s with %s kills) has connected",$player->{name},$player_rank,$player->{total_kills});
+					elsif ($player->{skill} == 1000) {
+						$msg = sprintf(
+							"%sNew player %s%s%s has connected from %s%s%s",
+							$color_default,
+							$color_gray, $player->{name}, $color_default,
+							$color_green, $player->{country}, $color_default
+						);
+					}
+					elsif ($g_ranktype ne "kills") {
+						$msg = sprintf(
+							"%s%s%s%s (Pos %s with %s points) has connected from %s%s%s",
+							$color_default,
+							$color_gray, $player->{name}, $color_default,
+							$player_rank, $player->{skill},
+							$color_green, $player->{country}, $color_default
+						);
+					}
+					else {
+						$msg = sprintf(
+							"%s%s%s%s (Pos %s with %s kills) has connected from %s%s%s",
+							$color_default,
+							$color_gray, $player->{name}, $color_default,
+							$player_rank, $player->{total_kills},
+							$color_green, $player->{country}, $color_default
+						);
+					}
+					$g_servers{$s_addr}->messageAll($msg, $player->{playerid}, 1);
+				}
+				else {
+					my $msg = "";
+					if ($g_ranktype ne "kills") {
+						$msg = sprintf(
+							"%s%s%s%s (Pos %s with %s points) has connected",
+							$color_default,
+							$color_gray, $player->{name}, $color_default,
+							$player_rank, $player->{skill}
+						);
+					}
+					else {
+						$msg = sprintf(
+							"%s%s%s%s (Pos %s with %s kills) has connected",
+							$color_default,
+							$color_gray, $player->{name}, $color_default,
+							$player_rank, $player->{total_kills}
+						);
 					}
 					$g_servers{$s_addr}->messageAll($msg, $player->{playerid}, 1);
 				}
