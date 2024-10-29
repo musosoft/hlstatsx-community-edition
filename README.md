@@ -1,24 +1,30 @@
 # HLstatsX : Community Edition
 
-[![github-actions](https://github.com/startersclan/hlstatsx-community-edition/workflows/ci-master-pr/badge.svg)](https://github.com/startersclan/hlstatsx-community-edition/actions)
-[![github-release](https://img.shields.io/github/v/release/startersclan/hlstatsx-community-edition?style=flat-square)](https://github.com/startersclan/hlstatsx-community-edition/releases/)
-[![docker-image-size](https://img.shields.io/docker/image-size/startersclan/hlstatsx-community-edition/master-web?label=web)](https://hub.docker.com/r/startersclan/hlstatsx-community-edition)
-[![docker-image-size](https://img.shields.io/docker/image-size/startersclan/hlstatsx-community-edition/master-daemon?label=daemon)](https://hub.docker.com/r/startersclan/hlstatsx-community-edition)
-
+```
 HLstatsX Community Edition is an open-source project licensed
 under GNU General Public License v2 and is a real-time stats
-and ranking for Source engine based games. HLstatsX Community
+and ranking system for Source engine-based games. HLstatsX Community
 Edition uses a Perl daemon to parse the log streamed from the
 game server. The data is stored in a MySQL Database and has
 a PHP frontend.
+```
 
 Counter-Strike 2 is supported (mostly), via [`source-udp-forwarder`](https://github.com/startersclan/source-udp-forwarder).
 
-## :loudspeaker: Important changes
+This repository is a fork of [startersclan/hlstatsx-community-edition](https://github.com/startersclan/hlstatsx-community-edition) with additional updates from various community and private patches to improve performance, security, and appearance. Enhancements include:
 
-| Date  | Description | Additional information |
+Currently, this fork is being tested on **[stats.lamateam.eu](http://stats.lamateam.eu)** with a Counter-Strike: Source server. 
+
+If you need it hosted on a free VPS or need installation assistance, please feel free to reach out.
+
+## :loudspeaker: Important Changes
+
+| Date  | Description | Additional Information |
 | ------------- | ------------- | ------------- |
-| 07.01.2020  | [#45](https://github.com/NomisCZ/hlstatsx-community-edition/issues/45) GeoIP2 Linux script updated, GeoLite2 MaxMind database (GDPR and CCPA) | https://blog.maxmind.com/2019/12/18/significant-changes-to-accessing-and-using-geolite2-databases/ |
+| 07.10.2024  | **Fixed Message of the Day**       | Missing background in CS:S
+| 07.10.2024  | **Fixed Auto Team Balance**        | Missing TS calc, ATB logic not compatible with CS:S
+| 07.10.2024  | **Fixed Problems in code**         | Typo with bracket, security
+| 07.10.2024  | **Improved In-game ATB**           | Add Admin Swap command and fade effect
 
 > Date format: DD.MM.YYYY
 
