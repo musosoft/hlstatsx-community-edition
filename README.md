@@ -11,7 +11,7 @@ a PHP frontend.
 
 Counter-Strike 2 is supported (mostly), via [`source-udp-forwarder`](https://github.com/startersclan/source-udp-forwarder).
 
-This repository is a fork of [startersclan/hlstatsx-community-edition](https://github.com/startersclan/hlstatsx-community-edition) with additional updates from various community and private patches to improve performance, security, and appearance. Enhancements include:
+This repository is a fork of [startersclan/hlstatsx-community-edition](https://github.com/startersclan/hlstatsx-community-edition) with additional updates from various community and private patches to improve performance, security, and appearance.
 
 Currently, this fork is being tested on **[stats.lamateam.eu](http://stats.lamateam.eu)** with a Counter-Strike: Source server. Please if you find any issues in other games - don't hesitate to report them.
 
