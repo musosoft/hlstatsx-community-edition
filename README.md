@@ -13,7 +13,7 @@ Counter-Strike 2 is supported (mostly), via [`source-udp-forwarder`](https://git
 
 This repository is a fork of [startersclan/hlstatsx-community-edition](https://github.com/startersclan/hlstatsx-community-edition) with additional updates from various community and private patches to improve performance, security, and appearance. Enhancements include:
 
-Currently, this fork is being tested on **[stats.lamateam.eu](http://stats.lamateam.eu)** with a Counter-Strike: Source server. 
+Currently, this fork is being tested on **[stats.lamateam.eu](http://stats.lamateam.eu)** with a Counter-Strike: Source server. Players reported it working in CS2 too, more debug is needed.
 
 If you need it hosted on a free VPS or need installation assistance, please feel free to reach out.
 
@@ -21,6 +21,7 @@ If you need it hosted on a free VPS or need installation assistance, please feel
 
 | Date  | Description | Additional Information |
 | ------------- | ------------- | ------------- |
+| 07.10.2024  | **Hash passwords in RIPEMD128**    | BREAKING CHANGE! Password reset needed
 | 07.10.2024  | **Fixed Message of the Day**       | Missing background in CS:S
 | 07.10.2024  | **Fixed Auto Team Balance**        | Missing TS calc, ATB logic not compatible with CS:S
 | 07.10.2024  | **Fixed Problems in code**         | Typo with bracket, security
@@ -32,7 +33,7 @@ If you need it hosted on a free VPS or need installation assistance, please feel
 
 ## :book: Documentation
 
-- https://github.com/NomisCZ/hlstatsx-community-edition/wiki 🚧 Wiki - work in progress 🚧
+- https://github.com/NomisCZ/hlstatsx-community-edition/wiki
 
 ## :speech_balloon: Help
 
