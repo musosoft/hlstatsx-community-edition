@@ -13,7 +13,7 @@ Counter-Strike 2 is supported (mostly), via [`source-udp-forwarder`](https://git
 
 This repository is a fork of [startersclan/hlstatsx-community-edition](https://github.com/startersclan/hlstatsx-community-edition) with additional updates from various community and private patches to improve performance, security, and appearance. Enhancements include:
 
-Currently, this fork is being tested on **[stats.lamateam.eu](http://stats.lamateam.eu)** with a Counter-Strike: Source server. Players reported it working in CS2 too, more debug is needed.
+Currently, this fork is being tested on **[stats.lamateam.eu](http://stats.lamateam.eu)** with a Counter-Strike: Source server. Please if you find any issues in other games - don't hesitate to report them.
 
 If you need it hosted on a free VPS or need installation assistance, please feel free to reach out.
 
