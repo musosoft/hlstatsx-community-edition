@@ -511,7 +511,7 @@ sub doEvent_EnterGame
 			{
 				# Define color codes
 				my $color_default = "\x01";
-				my $color_gray   = "\x07CCCCCC";  # Gray color (spectator color)
+				my $color_gray = ($g_servers{$s_addr}->{play_game} == CSS()) ? "\x07CCCCCC" : "\x03";
 				my $color_green  = "\x04";  # Green color
 
 				my $player_rank = $player->getRank();
