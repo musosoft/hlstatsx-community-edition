@@ -510,9 +510,9 @@ sub doEvent_EnterGame
 			if ($g_stdin == 0 && $g_servers{$s_addr}->{connect_announce} > 0)
 			{
 				# Define color codes
-				my $color_default = "\x01";
-				my $color_gray   = "\x07CCCCCC";  # Gray color (spectator color)
-				my $color_green  = "\x04";  # Green color
+				my $color_default = ($g_servers{$s_addr}->{play_game} == CSS()) ? "\x01" : "";
+				my $color_gray = ($g_servers{$s_addr}->{play_game} == CSS()) ? "\x07CCCCCC" : "";
+				my $color_green  = ($g_servers{$s_addr}->{play_game} == CSS()) ? "\x04" : "";
 
 				my $player_rank = $player->getRank();
 
