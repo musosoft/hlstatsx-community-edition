@@ -1,6 +1,10 @@
 # HLstatsX : Community Edition
 
-```
+[![github-actions](https://github.com/musosoft/hlstatsx-community-edition/workflows/ci-master-pr/badge.svg)](https://github.com/musosoft/hlstatsx-community-edition/actions)
+[![github-release](https://img.shields.io/github/v/release/musosoft/hlstatsx-community-edition?style=flat-square)](https://github.com/musosoft/hlstatsx-community-edition/releases/)
+[![docker-image-size](https://img.shields.io/docker/image-size/musosoft/hlstatsx-community-edition/master-web?label=web)](https://hub.docker.com/r/musosoft/hlstatsx-community-edition)
+[![docker-image-size](https://img.shields.io/docker/image-size/musosoft/hlstatsx-community-edition/master-daemon?label=daemon)](https://hub.docker.com/r/musosoft/hlstatsx-community-edition)
+
 HLstatsX Community Edition is an open-source project licensed
 under GNU General Public License v2 and is a real-time stats
 and ranking system for Source engine-based games. HLstatsX Community
@@ -11,11 +15,13 @@ a PHP frontend.
 
 Counter-Strike 2 is supported (mostly), via [`source-udp-forwarder`](https://github.com/startersclan/source-udp-forwarder).
 
-This repository is a fork of [startersclan/hlstatsx-community-edition](https://github.com/startersclan/hlstatsx-community-edition) with additional updates from various community and private patches to improve performance, security, and appearance.
+This repository is a fork of [startersclan/hlstatsx-community-edition](https://github.com/startersclan/hlstatsx-community-edition) with additional updates from various community and private patches to improve performance, security, and appearance. Enhancements include:
+- **Fixed Message of the Day**
+- **Fixed Auto Team Balance**
+- **Fixed Problems in code**
+- **Fixed Appearance and UI issues**
 
-Currently, this fork is being tested on **[stats.lamateam.eu](http://stats.lamateam.eu)** with a Counter-Strike: Source server. Please if you find any issues in other games - don't hesitate to report them.
-
-If you need it hosted on a free VPS or need installation assistance, please feel free to reach out.
+Currently, this fork is being tested on **[stats.lamateam.eu](http://stats.lamateam.eu)** with a Counter-Strike: Source server. If you need it hosted on a free VPS or need installation assistance, please feel free to reach out.
 
 ## :loudspeaker: Important Changes
 

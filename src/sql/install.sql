@@ -7007,7 +7007,7 @@ CREATE TABLE IF NOT EXISTS `hlstats_Users` (
 -- Dumping data for table `hlstats_Users`
 --
 
-INSERT INTO `hlstats_Users` VALUES ('admin','e10adc3949ba59abbe56e057f20f883e',100,0);
+INSERT INTO `hlstats_Users` VALUES ('admin','d6d56cab46e0f3af2c756289f2b447e0',100,0);
 
 -- --------------------------------------------------------
 
