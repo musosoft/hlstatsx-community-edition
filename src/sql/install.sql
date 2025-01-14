@@ -2720,6 +2720,10 @@ INSERT INTO `hlstats_Games_Defaults` (`code`, `parameter`, `value`) VALUES
 ('csp', 'TKPenalty', '25'),
 ('csp', 'TrackServerLoad', '1'),
 ('csp', 'UpdateHostname', '1'),
+('csp', 'BalanceSwitchOnlyDead', '1'),
+('csp', 'BalanceStartRounds', '7'),
+('csp', 'BalanceRoundsDelay', '3'),
+('csp', 'BalanceIgnoreBots', '0'),
 ('css', 'Admins', ''),
 ('css', 'AutoBanRetry', '0'),
 ('css', 'AutoTeamBalance', '0'),
@@ -2745,6 +2749,10 @@ INSERT INTO `hlstats_Games_Defaults` (`code`, `parameter`, `value`) VALUES
 ('css', 'TKPenalty', '25'),
 ('css', 'TrackServerLoad', '1'),
 ('css', 'UpdateHostname', '1'),
+('css', 'BalanceSwitchOnlyDead', '1'),
+('css', 'BalanceStartRounds', '7'),
+('css', 'BalanceRoundsDelay', '3'),
+('css', 'BalanceIgnoreBots', '0'),
 ('cstrike', 'Admins', ''),
 ('cstrike', 'AutoBanRetry', '0'),
 ('cstrike', 'AutoTeamBalance', '0'),
@@ -2770,6 +2778,10 @@ INSERT INTO `hlstats_Games_Defaults` (`code`, `parameter`, `value`) VALUES
 ('cstrike', 'TKPenalty', '25'),
 ('cstrike', 'TrackServerLoad', '1'),
 ('cstrike', 'UpdateHostname', '1'),
+('cstrike', 'BalanceSwitchOnlyDead', '1'),
+('cstrike', 'BalanceStartRounds', '7'),
+('cstrike', 'BalanceRoundsDelay', '3'),
+('cstrike', 'BalanceIgnoreBots', '0'),
 ('dod', 'Admins', ''),
 ('dod', 'AutoBanRetry', '0'),
 ('dod', 'AutoTeamBalance', '0'),
@@ -3285,6 +3297,10 @@ INSERT INTO `hlstats_Games_Defaults` (`code`, `parameter`, `value`) VALUES
 ('csgo', 'TKPenalty', '25'),
 ('csgo', 'TrackServerLoad', '1'),
 ('csgo', 'UpdateHostname', '1'),
+('csgo', 'BalanceSwitchOnlyDead', '1'),
+('csgo', 'BalanceStartRounds', '7'),
+('csgo', 'BalanceRoundsDelay', '3'),
+('csgo', 'BalanceIgnoreBots', '0'),
 ('dinodday', 'Admins', ''),
 ('dinodday', 'AutoBanRetry', '0'),
 ('dinodday', 'AutoTeamBalance', '0'),
@@ -3334,7 +3350,11 @@ INSERT INTO `hlstats_Games_Defaults` (`code`, `parameter`, `value`) VALUES
 ('cs2', 'SwitchAdmins', '0'),
 ('cs2', 'TKPenalty', '25'),
 ('cs2', 'TrackServerLoad', '1'),
-('cs2', 'UpdateHostname', '1');
+('cs2', 'UpdateHostname', '1'),
+('cs2', 'BalanceSwitchOnlyDead', '1'),
+('cs2', 'BalanceStartRounds', '7'),
+('cs2', 'BalanceRoundsDelay', '3'),
+('cs2', 'BalanceIgnoreBots', '0');
 
 
 CREATE TABLE IF NOT EXISTS `hlstats_Games_Supported` (
@@ -6838,7 +6858,13 @@ INSERT INTO `hlstats_Servers_Config_Default` (`parameter`, `value`, `description
 ('TKPenalty', '50', 'Penalty for a team kill (Default: 50 points).'),
 ('TrackServerLoad', '1', 'Saves every 5 min how much players are playing on the server.'),
 ('UpdateHostname', '1', 'Toggles auto-update of server name from hostname cvar 1=on(default) 0=off'),
-('PlayerEventsCommandHint', 'hlx_sm_hint', 'The command to display "hint" style messages for ATB switches. Default is "".');
+('PlayerEventsCommandHint', 'hlx_sm_hint', 'The command to display "hint" style messages for ATB switches. Default is "".'),
+('BalanceSwitchOnlyDead', '1', 'If enabled, only dead players can be switched by AutoBalance 1=on(default) 0=off.'),
+('BalanceStartRounds', '7', 'Minimal round count after map change, when AutoBalance by skill should start. Value lower than 2 is ignored. Default is 7.'),
+('BalanceRoundsDelay', '3', 'Rounds before next AutoBalance by skill. Default is 3.'),
+('BalanceAnalyzeRounds', '7', 'How many last rounds are analyzed for balancing. Default is 7.'),
+('BalanceMaxWins', '1', 'Defines maximum wins trough BalanceAnalyzeRounds for team to balance. More wins = more aggressive balance. Default 1.'),
+('BalanceIgnoreBots', '0', 'If enabled, bots are ignored by AutoBalance. 1=on 0=off(default).');
 -- --------------------------------------------------------
 
 --

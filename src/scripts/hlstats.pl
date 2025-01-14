@@ -2186,6 +2186,12 @@ while ($loop = &getLine()) {
 				$std_cfg{"EnablePublicCommands"}			= 1;
 				$std_cfg{"Admins"}							= "";
 				$std_cfg{"SwitchAdmins"}					= 0;
+				$std_cfg{"BalanceSwitchOnlyDead"}			= 1;
+				$std_cfg{"BalanceStartRounds"}				= 7;
+				$std_cfg{"BalanceRoundsDelay"}				= 3;
+				$std_cfg{"BalanceAnalyzeRounds"}			= 7;
+				$std_cfg{"BalanceMaxWins"}					= 1;
+				$std_cfg{"BalanceIgnoreBots"}				= 0;
 				$std_cfg{"IgnoreBots"}						= 1;
 				$std_cfg{"SkillMode"}						= 0;
 				$std_cfg{"GameType"}						= 0;
@@ -2330,6 +2336,31 @@ while ($loop = &getLine()) {
 					$g_servers{$s_addr}->set("switch_admins", "0");
 					&printEvent("TEAMS", "Switching Admins on Auto-Team-Balance is disabled", 1);
 				}
+
+				if ($s_cfg{"BalanceSwitchOnlyDead"} > 0) {
+					$g_servers{$s_addr}->set("balance_switch_only_dead", "1");
+					&printEvent("TEAMS", "Switching only dead players on Auto-Team-Balance is enabled", 1);
+				} else {
+					$g_servers{$s_addr}->set("balance_switch_only_dead", "0");
+					&printEvent("TEAMS", "Switching only dead players on Auto-Team-Balance is disabled", 1);
+				}
+
+				if ($s_cfg{"BalanceIgnoreBots"} > 0) {
+					$g_servers{$s_addr}->set("balance_ignore_bots", "1");
+					&printEvent("TEAMS", "Switching Bots on Auto-Team-Balance is enabled", 1);
+				} else {
+					$g_servers{$s_addr}->set("balance_ignore_bots", "0");
+					&printEvent("TEAMS", "Switching Bots on Auto-Team-Balance is disabled", 1);
+				}
+
+				$g_servers{$s_addr}->set("balance_start_rounds", $s_cfg{"BalanceStartRounds"});
+				&printEvent("SERVER", "Auto-Team-Balance start rounds set to ".$s_cfg{"BalanceStartRounds"}, 1);
+				$g_servers{$s_addr}->set("balance_rounds_delay", $s_cfg{"BalanceRoundsDelay"});
+				&printEvent("SERVER", "Auto-Team-Balance rounds delay set to ".$s_cfg{"BalanceRoundsDelay"}, 1);
+				$g_servers{$s_addr}->set("balance_analyze_rounds", $s_cfg{"BalanceAnalyzeRounds"});
+				&printEvent("SERVER", "Auto-Team-Balance analyze rounds set to ".$s_cfg{"BalanceAnalyzeRounds"}, 1);
+				$g_servers{$s_addr}->set("balance_max_wins", $s_cfg{"BalanceMaxWins"});
+				&printEvent("SERVER", "Auto-Team-Balance max wins set to ".$s_cfg{"BalanceMaxWins"}, 1);
 				
 				if ($s_cfg{"IgnoreBots"} > 0) {
 					$g_servers{$s_addr}->set("ignore_bots", "1");
