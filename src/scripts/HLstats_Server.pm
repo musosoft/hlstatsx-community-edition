@@ -115,6 +115,12 @@ sub new
 	$self->{ba_map_rounds}    = 0;
 	$self->{ba_last_swap}     = 0;
 	$self->{ba_player_switch} = 0;  # player switched on his own
+	$self->{balance_switch_only_dead} = 0;
+	$self->{balance_ignore_bots} = 0;
+	$self->{balance_start_rounds} = 0;
+	$self->{balance_rounds_delay} = 0;
+	$self->{balance_analyze_rounds} = 0;
+	$self->{balance_max_wins} = 0;
 	
 	# Messaging commands
 	$self->{show_stats}                  	= 0;
@@ -774,7 +780,7 @@ sub add_round_winner
 	my ($self, $team) = @_;
   
 	&::printNotice("add_round_winner");
-	$self->{winner}[($self->{map_rounds} % 7)] = $team;
+	$self->{winner}[($self->{map_rounds} % $self->{balance_analyze_rounds})] = $team;
 	$self->increment("ba_map_rounds");
 	$self->increment("map_rounds");
 	$self->increment("rounds");
@@ -812,284 +818,188 @@ sub switch_player
 sub analyze_teams
 {
 	my ($self) = @_;
-  
-	if (($::g_stdin == 0) && ($self->{num_trackable_players} < $self->{minplayers})) 
-	{
+
+	if ($::g_stdin != 0 || $self->{ba_enabled} == 0) {
+		return;
+	}
+
+	if ($self->{num_trackable_players} < $self->{minplayers}) {
 		&::printNotice("(IGNORED) NOTMINPLAYERS: analyze_teams");
+		return;
 	}
-	elsif (($::g_stdin == 0) && ($self->{ba_enabled} > 0))
+
+	if ($self->{map_rounds} < 2) {
+		&::printNotice("(IGNORED) NOTMINROUNDS: analyze_teams");
+		return;
+	}
+
+	&::printNotice("analyze_teams");
+	my $ts_skill     = 0;
+	my $ts_avg_skill = 0;
+	my $ts_count     = 0;
+	my $ts_wins      = $self->{ba_ts_wins};
+	my $ts_kills     = 0;
+	my $ts_deaths    = 0;
+	my $ts_diff      = 0;
+	my @ts_players   = ();
+
+	my $ct_skill     = 0;
+	my $ct_avg_skill = 0;
+	my $ct_count     = 0;
+	my $ct_wins      = $self->{ba_ct_wins};
+	my $ct_kills     = 0;
+	my $ct_deaths    = 0;
+	my $ct_diff      = 0;
+	my @ct_players   = ();
+
+	my $server_id   = $self->{id};
+	while (my($pl, $player) = each(%{$self->{srv_players}}) )
 	{
-		&::printNotice("analyze_teams");
-		my $ts_skill     = 0;
-		my $ts_avg_skill = 0;
-		my $ts_count     = 0;
-		my $ts_wins      = $self->{ba_ts_wins};
-		my $ts_kills     = 0;
-		my $ts_deaths    = 0;
-		my $ts_diff      = 0;
-		my @ts_players   = ();
-
-		my $ct_skill     = 0;
-		my $ct_avg_skill = 0;
-		my $ct_count     = 0;
-		my $ct_wins      = $self->{ba_ct_wins};
-		my $ct_kills     = 0;
-		my $ct_deaths    = 0;
-		my $ct_diff      = 0;
-		my @ct_players   = ();
-		
-		my $server_id   = $self->{id};
-		while ( my($pl, $player) = each(%{$self->{srv_players}}) )
-		{	
-			my @Player      = ( $player->{name},			#0
-								$player->{uniqueid},		#1
-								$player->{skill},   		#2
-								$player->{team},			#3
-								$player->{map_kills},		#4
-								$player->{map_deaths},		#5
-								($player->{map_kills}-$player->{map_deaths}), #6
-								$player->{is_dead},			#7
-								$player->{userid},			#8
-								);
-    
-			if ($Player[3] eq "TERRORIST")
-			{
-				push(@{$ts_players[$ts_count]}, @Player);
-				$ts_skill   += $Player[2]; 
-				$ts_count   += 1;
-				$ts_kills   += $Player[4];
-				$ts_deaths  += $Player[5];
-			}
-			elsif ($Player[3] eq "CT")
-			{
-				push(@{$ct_players[$ct_count]}, @Player);
-				$ct_skill   += $Player[2]; 
-				$ct_count   += 1;
-				$ct_kills   += $Player[4]; 
-				$ct_deaths  += $Player[5]; 
-			}
+		if ($player->{is_bot} && $self->{balance_ignore_bots}) {
+			next;
 		}
-		@ct_players = sort { $b->[6] <=> $a->[6]} @ct_players;
-		@ts_players = sort { $b->[6] <=> $a->[6]} @ts_players;
-    
-		&::printEvent("TEAM", "Checking Teams", 1);
-		$admin_msg = "AUTO-TEAM BALANCER: CT ($ct_count) $ct_kills:$ct_deaths  [$ct_wins - $ts_wins] $ts_kills:$ts_deaths ($ts_count) TS";
-		if ($self->{player_events} == 1)  
-		{
-			if ($self->{player_admin_command} ne "") {
-				$cmd_str = $self->{player_admin_command}." $admin_msg";
-				$self->dorcon($cmd_str);
-			}  
+
+		my @Player      = ( $player->{name},			#0
+							$player->{uniqueid},		#1
+							$player->{skill},   		#2
+							$player->{team},			#3
+							$player->{map_kills},		#4
+							$player->{map_deaths},		#5
+							($player->{map_kills}-$player->{map_deaths}), #6
+							$player->{is_dead},			#7
+							$player->{userid},			#8
+							$player->{is_bot},			#9
+							);
+
+		if ($Player[3] eq "TERRORIST") {
+			push(@{$ts_players[$ts_count]}, @Player);
+			$ts_skill   += $Player[2];
+			$ts_count   += 1;
+			$ts_kills   += $Player[4];
+			$ts_deaths  += $Player[5];
+		} elsif ($Player[3] eq "CT") {
+			push(@{$ct_players[$ct_count]}, @Player);
+			$ct_skill   += $Player[2];
+			$ct_count   += 1;
+			$ct_kills   += $Player[4];
+			$ct_deaths  += $Player[5];
 		}
-    
-		$self->messageAll("HLstatsX:CE - ATB - Checking Teams", 0, 1);
-
-		if ($self->{ba_map_rounds} >= 2)    # need all players for numerical balacing, at least 2 for getting all players
-		{
-			my $action_done = 0;
-			if ($self->{ba_last_swap} > 0)
-			{
-				$self->{ba_last_swap}--;
-			}
-      
-			if ($ct_count + 1 < $ts_count)         # ct need players
-			{
-				$needed_players = floor( ($ts_count - $ct_count) / 2);
-				if ($ct_wins < 2)
-				{
-					@ts_players = sort { $b->[7] <=> $a->[7]} @ts_players;
-				}
-				else
-				{
-					@ts_players = sort { $a->[7] <=> $b->[7]} @ts_players;
-				}
-				foreach my $entry (@ts_players) 
-				{
-					if ($needed_players > 0) # how many we need to make teams even (only numerical)
-					{
-						if (@{$entry}[7] == 1)  # only dead players!!
-						{
-							if (($self->{switch_admins} == 1) || (($self->{switch_admins} == 0) && ($self->is_admin(@{$entry}[1]) == 0)))  {
-								$self->switch_player(@{$entry}[8], @{$entry}[0]); 
-								$action_done++;
-								$needed_players--;
-							}
-						}
-					}
-				}
-			}
-			elsif  ($ts_count + 1 < $ct_count)  # ts need players
-			{
-				$needed_players = floor( ($ct_count - $ts_count) / 2);
-				if ($ts_wins < 2)
-				{
-					@ct_players = sort { $b->[6] <=> $a->[6]} @ct_players;  # best player
-				}
-				else
-				{
-					@ct_players = sort { $a->[6] <=> $b->[6]} @ct_players;  # worst player
-				}
-				foreach my $entry (@ct_players) 
-				{
-					if ($needed_players > 0) # how many we need to make teams even (only numerical)
-					{
-						if (@{$entry}[7] == 1)  # only dead players!!
-						{
-							if (($self->{switch_admins} == 1) || (($self->{switch_admins} == 0) && ($self->is_admin(@{$entry}[1]) == 0)))  {
-								$self->switch_player(@{$entry}[8], @{$entry}[0]); 
-								$action_done++;
-								$needed_players--;
-							}
-						}
-					}
-				}
-			}
-      
-			if (($action_done == 0) && ($self->{ba_last_swap} == 0) && ($self->{ba_map_rounds} >= 7) && ($self->{ba_player_switch} == 0)) # frags balancing (last swap 3 rounds before)
-			{
-				if ($ct_wins < 2)
-				{
-					if ($ct_count < $ts_count)     # one player less we dont need swap just bring one over
-					{
-						my $ts_found = 0;
-						@ts_players = sort { $b->[6] <=> $a->[6]} @ts_players;  # best player
-						foreach my $entry (@ts_players) 
-						{
-							if ($ts_found == 0)
-							{
-								if (@{$entry}[7] == 1)  # only dead players!!
-								{
-									if (($self->{switch_admins} == 1) || (($self->{switch_admins} == 0) && ($self->is_admin(@{$entry}[1]) == 0)))  {
-										$self->{ba_last_swap} = 3;
-										$self->switch_player(@{$entry}[9], @{$entry}[0]); 
-										$ts_found++;
-									}
-								}
-							}
-						}
-					}
-					else                  # need to swap to players
-					{
-						my $ts_playerid = 0;
-						my $ts_name     = "";
-						my $ts_kills    = 0;
-						my $ts_deaths   = 0;
-						my $ct_playerid = 0;
-						my $ct_name     = "";
-						my $ct_kills    = 0;
-						my $ct_deaths   = 0;
-						my $ts_found = 0;
-						@ts_players = sort { $b->[6] <=> $a->[6]} @ts_players;  # best player
-						foreach my $entry (@ts_players) 
-						{
-							if ($ts_found == 0)
-							{
-								if (@{$entry}[7] == 1)  # only dead players!!
-								{
-									if (($self->{switch_admins} == 1) || (($self->{switch_admins} == 0) && ($self->is_admin(@{$entry}[1]) == 0)))  {
-										$ts_playerid = @{$entry}[8];
-										$ts_name     = @{$entry}[0];
-										$ts_found++;
-									}
-								}
-							}
-						}
-
-						my $ct_found = 0;
-						@ct_players = sort { $a->[6] <=> $b->[6]} @ct_players;  # worst player
-						foreach my $entry (@ct_players) 
-						{
-							if ($ct_found == 0)
-							{
-								if (@{$entry}[7] == 1)  # only dead players!!
-								{
-									if (($self->{switch_admins} == 1) || (($self->{switch_admins} == 0) && ($self->is_admin(@{$entry}[1]) == 0)))  {
-										$ct_playerid = @{$entry}[8];
-										$ct_name     = @{$entry}[0];
-										$ct_found++;
-									}
-								}
-							}
-						}
-						if (($ts_found>0) && ($ct_found>0))
-						{
-							$self->{ba_last_swap} = 3;
-							$self->switch_player($ts_playerid, $ts_name); 
-							$self->switch_player($ct_playerid, $ct_name); 
-						}
-					}
-				}
-				elsif ($ts_wins < 2)
-				{
-					if ($ts_count < $ct_count)     # one player less we dont need swap just bring one over
-					{
-						my $ct_found = 0;
-						@ct_players = sort { $b->[6] <=> $a->[6]} @ct_players;  # best player
-						foreach my $entry (@ct_players) 
-						{
-							if ($ct_found == 0)
-							{
-								if (@{$entry}[7] == 1)  # only dead players!!
-								{
-									if (($self->{switch_admins} == 1) || (($self->{switch_admins} == 0) && ($self->is_admin(@{$entry}[1]) == 0)))  {
-										$self->{ba_last_swap} = 3;
-										$self->switch_player(@{$entry}[8], @{$entry}[0]); 
-										$ct_found++;
-									}
-								}
-							}
-						}
-					}
-					else                  # need to swap to players
-					{
-						my $ts_playerid  = 0;
-						my $ts_name      = "";
-						my $ct_playerid  = 0;
-						my $ct_name      = "";             
-						my $ct_found = 0;
-						@ct_players = sort { $b->[6] <=> $a->[6]} @ct_players;  # best player
-						foreach my $entry (@ct_players) 
-						{
-							if ($ct_found == 0)
-							{
-								if (@{$entry}[7] == 1)  # only dead players!!
-								{
-									if (($self->{switch_admins} == 1) || (($self->{switch_admins} == 0) && ($self->is_admin(@{$entry}[1]) == 0)))  {
-										$ct_playerid = @{$entry}[8];
-										$ct_name     = @{$entry}[0];
-										$ct_found++;
-									}
-								}
-							}
-						}
-
-						my $ts_found = 0;
-						@ts_players = sort { $a->[6] <=> $b->[6]} @ts_players;  # worst player
-						foreach my $entry (@ts_players) 
-						{
-							if ($ts_found == 0)
-							{
-								if (@{$entry}[7] == 1)  # only dead players!!
-								{
-									if (($self->{switch_admins} == 1) || (($self->{switch_admins} == 0) && ($self->is_admin(@{$entry}[1]) == 0)))  {
-										$ts_playerid = @{$entry}[8];
-										$ts_name     = @{$entry}[0];
-										$ts_found++;
-									}
-								}
-							}
-						}
-						if (($ts_found > 0) && ($ct_found > 0))
-						{
-							$self->{ba_last_swap} = 3;
-							$self->switch_player($ts_playerid, $ts_name); 
-							$self->switch_player($ct_playerid, $ct_name); 
-						}
-					}
-				}
-			}
-		} # end if rounds > 1  
 	}
+	@ct_players = sort { $b->[6] <=> $a->[6]} @ct_players;
+	@ts_players = sort { $b->[6] <=> $a->[6]} @ts_players;
+
+	&::printEvent("TEAM", "Checking Teams", 1);
+
+	if ($self->{player_events} == 1 && $self->{player_admin_command} ne "") {
+		$admin_msg = "AUTO-TEAM BALANCER: CT ($ct_count) $ct_kills:$ct_deaths  [$ct_wins - $ts_wins] $ts_kills:$ts_deaths ($ts_count) TS";
+		$cmd_str = $self->{player_admin_command}." $admin_msg";
+		$self->dorcon($cmd_str);
+	}
+
+	$self->messageAll("HLstatsX:CE - ATB - Checking Teams", 0, 1);
+
+	my $action_done = 0;
+	if ($self->{ba_last_swap} > 0) {
+		$self->{ba_last_swap}--;
+	}
+
+	# Balance based on team count.
+	# If smaller team is also losing, give them best enemy player(s). Otherwise just give them worst player(s) to even counts.
+	my $needed_players = 0;
+	my @possible_players = ();
+
+	if ($ct_count + 1 < $ts_count) {
+		$needed_players = floor( ($ts_count - $ct_count) / 2);
+		if ($ct_wins <= $self->{balance_max_wins}) {
+			@possible_players = sort { $b->[6] <=> $a->[6]} @ts_players;  # best player
+		} else {
+			@possible_players = sort { $a->[6] <=> $b->[6]} @ts_players;  # worst player
+		}
+	} elsif ($ts_count + 1 < $ct_count) {
+		$needed_players = floor( ($ct_count - $ts_count) / 2);
+		if ($ts_wins <= $self->{balance_max_wins}) {
+			@possible_players = sort { $b->[6] <=> $a->[6]} @ct_players;  # best player
+		} else {
+			@possible_players = sort { $a->[6] <=> $b->[6]} @ct_players;  # worst player
+		}
+	}
+
+	foreach my $entry (@possible_players) {
+		if ($needed_players == 0) {
+			last;
+		}
+
+		if ((@{$entry}[7] == 0 && $self->{balance_switch_only_dead}) || ($self->is_admin(@{$entry}[1]) == 1 && !$self->{switch_admins})) {
+			next;
+		}
+
+		$self->switch_player(@{$entry}[8], @{$entry}[0]);
+		$action_done++;
+		$needed_players--;
+	}
+
+	if ($action_done) {
+		return;
+	}
+	# End of balance based on team count.
+
+	# Balance based on frags.
+	if ($self->{ba_last_swap} > 0 || $self->{map_rounds} < $self->{balance_start_rounds} || $self->{ba_player_switch} != 0) {
+		return;
+	}
+
+	my $need_ct = 1;
+	my $need_ts = 1;
+	if ($ct_wins <= $self->{balance_max_wins}) {
+		if ($ct_count < $ts_count) {
+			$need_ct = 0; # we just need to bring one player
+		}
+		@ts_players = sort { $b->[6] <=> $a->[6]} @ts_players;  # best player
+		@ct_players = sort { $a->[6] <=> $b->[6]} @ct_players;  # worst player
+	} elsif ($ts_wins <= $self->{balance_max_wins}) {
+		if ($ts_count < $ct_count) {
+			$need_ts = 0; # we just need to bring one player
+		}
+		@ts_players = sort { $a->[6] <=> $b->[6]} @ts_players;  # worst player
+		@ct_players = sort { $b->[6] <=> $a->[6]} @ct_players;  # best player
+	}
+
+	my @ct_switch_player = ();
+	my @ts_switch_player = ();
+
+	foreach my $entry (@ct_players) {
+		if ((@{$entry}[7] == 0 && $self->{balance_switch_only_dead}) || ($self->is_admin(@{$entry}[1]) == 1 && !$self->{switch_admins})) {
+			next;
+		}
+
+		@ct_switch_player = @{$entry};
+		last;
+	}
+
+	foreach my $entry (@ts_players) {
+		if ((@{$entry}[7] == 0 && $self->{balance_switch_only_dead}) || ($self->is_admin(@{$entry}[1]) == 1 && !$self->{switch_admins})) {
+			next;
+		}
+
+		@ts_switch_player = @{$entry};
+		last;
+	}
+
+	if ($need_ct && @ct_switch_player && $need_ts && @ts_switch_player) {
+		$self->switch_player(@ct_switch_player[8], @ct_switch_player[0]);
+		$self->switch_player(@ts_switch_player[8], @ts_switch_player[0]);
+	} elsif ($need_ct && @ct_switch_player && !$need_ts) {
+		$self->switch_player(@ct_switch_player[8], @ct_switch_player[0]);
+	} elsif ($need_ts && @ts_switch_player && !$need_ct) {
+		$self->switch_player(@ts_switch_player[8], @ts_switch_player[0]);
+	} else {
+		# No players found to switch.
+		return;
+	}
+
+	$self->{ba_last_swap} = $self->{balance_rounds_delay};
+
+	# End of balance based on frags.
 }
 
 #
