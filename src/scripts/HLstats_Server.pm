@@ -986,6 +986,7 @@ sub analyze_teams
 
 	foreach my $entry (@ct_players) {
 		if ((@{$entry}[7] == 0 && $self->{balance_switch_only_dead}) || ($self->is_admin(@{$entry}[1]) == 1 && !$self->{switch_admins})) {
+			$self->debug_message("TeamBalancer: CT player " . @{$entry}[0] . " ignored. is_dead: " . @{$entry}[7]);
 			next;
 		}
 
@@ -995,6 +996,7 @@ sub analyze_teams
 
 	foreach my $entry (@ts_players) {
 		if ((@{$entry}[7] == 0 && $self->{balance_switch_only_dead}) || ($self->is_admin(@{$entry}[1]) == 1 && !$self->{switch_admins})) {
+			$self->debug_message("TeamBalancer: T player " . @{$entry}[0] . " ignored. is_dead: " . @{$entry}[7]);
 			next;
 		}
 
