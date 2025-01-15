@@ -870,7 +870,7 @@ sub analyze_teams
 			$self->debug_message("TeamBalancer: Bot " . $player->{name} . " ignored.");
 			next;
 		}
-		$self->debug_message("TeamBalancer: Player added to list: " . $player);
+
 		my @Player      = ( $player->{name},			#0
 							$player->{uniqueid},		#1
 							$player->{skill},   		#2
@@ -882,7 +882,7 @@ sub analyze_teams
 							$player->{userid},			#8
 							$player->{is_bot},			#9
 							);
-
+		$self->debug_message("TeamBalancer: Player added to list: " . @Player);
 		if ($Player[3] eq "TERRORIST") {
 			push(@{$ts_players[$ts_count]}, @Player);
 			$ts_skill   += $Player[2];
