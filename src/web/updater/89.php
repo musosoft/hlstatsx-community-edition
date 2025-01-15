@@ -32,7 +32,6 @@ $db->query("INSERT INTO `hlstats_Games_Defaults` (`code`, `parameter`, `value`) 
 ('csgo', 'BalanceStartRounds', '7'),
 ('csgo', 'BalanceRoundsDelay', '3'),
 ('csgo', 'BalanceIgnoreBots', '0'),
-('cs2', 'UpdateHostname', '1'),
 ('cs2', 'BalanceSwitchOnlyDead', '1'),
 ('cs2', 'BalanceStartRounds', '7'),
 ('cs2', 'BalanceRoundsDelay', '3'),
