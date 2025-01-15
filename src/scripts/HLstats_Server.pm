@@ -957,11 +957,10 @@ sub analyze_teams
 	# End of balance based on team count.
 
 	# Balance based on frags.
-	if ($self->{ba_last_swap} > 0 || $self->{map_rounds} < $self->{balance_start_rounds} || $self->{ba_player_switch} != 0) {
+	if ($self->{ba_last_swap} > 0 || $self->{map_rounds} < $self->{balance_start_rounds}) {
 		$self->debug_message("TeamBalancer skipped:");
 		$self->debug_message("ba_last_swap: " . $self->{ba_last_swap});
 		$self->debug_message("map_rounds: " . $self->{map_rounds} . " | balance_start_rounds: " . $self->{balance_start_rounds});
-		$self->debug_message("ba_player_switch " . $self->{ba_player_switch});
 		return;
 	}
 
