@@ -964,18 +964,18 @@ sub analyze_teams
 		return;
 	}
 
-	my $need_ct = 1;
-	my $need_ts = 1;
+	my $need_ct = 0;
+	my $need_ts = 0;
 	if ($ct_wins <= $self->{balance_max_wins}) {
-		if ($ct_count < $ts_count) {
-			$need_ct = 0; # we just need to bring one player
-		}
+		$need_ct = $ct_count < $ts_count ? 0 : 1;
+		$need_ts = 1;
+
 		@ts_players = sort { $b->[6] <=> $a->[6]} @ts_players;  # best player
 		@ct_players = sort { $a->[6] <=> $b->[6]} @ct_players;  # worst player
 	} elsif ($ts_wins <= $self->{balance_max_wins}) {
-		if ($ts_count < $ct_count) {
-			$need_ts = 0; # we just need to bring one player
-		}
+		$need_ct = 1;
+		$need_ts = $ts_count < $ct_count ? 0 : 1;
+
 		@ts_players = sort { $a->[6] <=> $b->[6]} @ts_players;  # worst player
 		@ct_players = sort { $b->[6] <=> $a->[6]} @ct_players;  # best player
 	}
