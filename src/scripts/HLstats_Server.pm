@@ -867,6 +867,7 @@ sub analyze_teams
 	while (my($pl, $player) = each(%{$self->{srv_players}}) )
 	{
 		if ($player->{is_bot} && $self->{balance_ignore_bots}) {
+			$self->debug_message("TeamBalancer: Bot " . $player->{name} . " ignored.");
 			next;
 		}
 
