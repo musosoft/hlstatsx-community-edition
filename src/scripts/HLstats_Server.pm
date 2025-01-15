@@ -838,11 +838,11 @@ sub analyze_teams
 		return;
 	}
 
-	if ($self->{map_rounds} < 2) {
-		$self->debug_message("TeamBalancer skipped: At least two rounds have to be finished.");
-		&::printNotice("(IGNORED) NOTMINROUNDS: analyze_teams");
-		return;
-	}
+	# if ($self->{map_rounds} < 2) {
+	# 	$self->debug_message("TeamBalancer skipped: At least two rounds have to be finished.");
+	# 	&::printNotice("(IGNORED) NOTMINROUNDS: analyze_teams");
+	# 	return;
+	# }
 
 	&::printNotice("analyze_teams");
 	my $ts_skill     = 0;
@@ -870,7 +870,7 @@ sub analyze_teams
 			$self->debug_message("TeamBalancer: Bot " . $player->{name} . " ignored.");
 			next;
 		}
-
+		$self->debug_message("TeamBalancer: Player added to list: " . $player);
 		my @Player      = ( $player->{name},			#0
 							$player->{uniqueid},		#1
 							$player->{skill},   		#2
