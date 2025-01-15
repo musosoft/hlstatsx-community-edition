@@ -814,6 +814,15 @@ sub switch_player
 	}
 }
 
+sub debug_message
+{
+	my ($self, $message) = @_;
+
+	if ($self->{player_events} == 1 && $self->{player_admin_command} ne "") {
+		$cmd_str = $self->{player_admin_command}." [DEBUG] $message";
+		$self->dorcon($cmd_str);
+	}
+}
 
 sub analyze_teams
 {
@@ -824,11 +833,13 @@ sub analyze_teams
 	}
 
 	if ($self->{num_trackable_players} < $self->{minplayers}) {
+		$self->debug_message("TeamBalancer skipped: Not enough players.");
 		&::printNotice("(IGNORED) NOTMINPLAYERS: analyze_teams");
 		return;
 	}
 
 	if ($self->{map_rounds} < 2) {
+		$self->debug_message("TeamBalancer skipped: At least two rounds have to be finished.");
 		&::printNotice("(IGNORED) NOTMINROUNDS: analyze_teams");
 		return;
 	}
@@ -890,11 +901,12 @@ sub analyze_teams
 
 	&::printEvent("TEAM", "Checking Teams", 1);
 
-	if ($self->{player_events} == 1 && $self->{player_admin_command} ne "") {
-		$admin_msg = "AUTO-TEAM BALANCER: CT ($ct_count) $ct_kills:$ct_deaths  [$ct_wins - $ts_wins] $ts_kills:$ts_deaths ($ts_count) TS";
-		$cmd_str = $self->{player_admin_command}." $admin_msg";
-		$self->dorcon($cmd_str);
-	}
+	# if ($self->{player_events} == 1 && $self->{player_admin_command} ne "") {
+	# 	$admin_msg = "AUTO-TEAM BALANCER: CT ($ct_count) $ct_kills:$ct_deaths  [$ct_wins - $ts_wins] $ts_kills:$ts_deaths ($ts_count) TS";
+	# 	$cmd_str = $self->{player_admin_command}." $admin_msg";
+	# 	$self->dorcon($cmd_str);
+	# }
+	$self->debug_message("AUTO-TEAM BALANCER: CT ($ct_count) $ct_kills:$ct_deaths  [$ct_wins - $ts_wins] $ts_kills:$ts_deaths ($ts_count) TS");
 
 	$self->messageAll("HLstatsX:CE - ATB - Checking Teams", 0, 1);
 
@@ -939,12 +951,17 @@ sub analyze_teams
 	}
 
 	if ($action_done) {
+		$self->debug_message("TeamBalancer: Player(s) switched to even counts.");
 		return;
 	}
 	# End of balance based on team count.
 
 	# Balance based on frags.
 	if ($self->{ba_last_swap} > 0 || $self->{map_rounds} < $self->{balance_start_rounds} || $self->{ba_player_switch} != 0) {
+		$self->debug_message("TeamBalancer skipped:");
+		$self->debug_message("ba_last_swap: " . $self->{ba_last_swap});
+		$self->debug_message("map_rounds: " . $self->{map_rounds} . " | balance_start_rounds: " . $self->{balance_start_rounds});
+		$self->debug_message("ba_player_switch " . $self->{ba_player_switch});
 		return;
 	}
 
@@ -985,15 +1002,20 @@ sub analyze_teams
 		last;
 	}
 
+	$self->debug_message("TeamBalancer: Need CT: " . $need_ct . " | Need T: " . $need_ts);
 	if ($need_ct && @ct_switch_player && $need_ts && @ts_switch_player) {
+		$self->debug_message("TeamBalancer: Switching " . @ct_switch_player[0] . " [CT] <-> " . @ts_switch_player[0] . " [T]");
 		$self->switch_player(@ct_switch_player[8], @ct_switch_player[0]);
 		$self->switch_player(@ts_switch_player[8], @ts_switch_player[0]);
 	} elsif ($need_ct && @ct_switch_player && !$need_ts) {
+		$self->debug_message("TeamBalancer: Switching " . @ct_switch_player[0] . " [CT]");
 		$self->switch_player(@ct_switch_player[8], @ct_switch_player[0]);
 	} elsif ($need_ts && @ts_switch_player && !$need_ct) {
+		$self->debug_message("TeamBalancer: Switching " . @ts_switch_player[0] . " [T]");
 		$self->switch_player(@ts_switch_player[8], @ts_switch_player[0]);
 	} else {
 		# No players found to switch.
+		$self->debug_message("TeamBalancer: No players found to switch.");
 		return;
 	}
 
