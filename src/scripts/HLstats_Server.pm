@@ -832,11 +832,11 @@ sub analyze_teams
 		return;
 	}
 
-	if ($self->{num_trackable_players} < $self->{minplayers}) {
-		$self->debug_message("TeamBalancer skipped: Not enough players.");
-		&::printNotice("(IGNORED) NOTMINPLAYERS: analyze_teams");
-		return;
-	}
+	# if ($self->{num_trackable_players} < $self->{minplayers}) {
+	# 	$self->debug_message("TeamBalancer skipped: Not enough players.");
+	# 	&::printNotice("(IGNORED) NOTMINPLAYERS: analyze_teams");
+	# 	return;
+	# }
 
 	# if ($self->{map_rounds} < 2) {
 	# 	$self->debug_message("TeamBalancer skipped: At least two rounds have to be finished.");
@@ -882,7 +882,7 @@ sub analyze_teams
 							$player->{userid},			#8
 							$player->{is_bot},			#9
 							);
-		$self->debug_message("TeamBalancer: Player added to list: " . @Player);
+		$self->debug_message("TeamBalancer: Player " . $player->{name} . " added to list. is_dead: " . $player->{is_dead});
 		if ($Player[3] eq "TERRORIST") {
 			push(@{$ts_players[$ts_count]}, @Player);
 			$ts_skill   += $Player[2];
