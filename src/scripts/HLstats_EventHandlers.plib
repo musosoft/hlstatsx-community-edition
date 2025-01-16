@@ -1504,9 +1504,9 @@ sub doEvent_Frag
 			}
 			$killer->updateDB();
 			$victim->increment("map_deaths");
-			$victim->set("is_dead", "1");
+			# $victim->set("is_dead", "1");
 			if ($weapon ne "zombie_claws_of_death") {
-				$victim->set("is_dead", "0");
+				$victim->set("is_dead", "1");
 			}
 			if ($victim->{auto_type} eq "kill") {
 				&doEvent_Chat("say",
@@ -2116,7 +2116,7 @@ sub doEvent_WorldAction
 	if ($action eq "Round_End" || $action eq "Round_Win" || $action eq "Mini_Round_Win") {
 		if ($action eq "Round_End") {
 			while (my($pl, $player) = each(%g_players) ) {
-				$g_servers{$s_addr}->messageAll("Player " .$player{name}. " is_dead: " . $player->{is_dead});
+				$g_servers{$s_addr}->messageAll("Player " .$player->{name}. " is_dead: " . $player->{is_dead});
 			}
 			$g_servers{$s_addr}->analyze_teams();
 		}
