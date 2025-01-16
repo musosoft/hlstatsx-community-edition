@@ -2115,6 +2115,9 @@ sub doEvent_WorldAction
 	}
 	if ($action eq "Round_End" || $action eq "Round_Win" || $action eq "Mini_Round_Win") {
 		if ($action eq "Round_End") {
+			while (my($pl, $player) = each(%g_players) ) {
+				$g_servers{$s_addr}->messageAll("Player " .$player{name}. " is_dead: " . $player->{is_dead});
+			}
 			$g_servers{$s_addr}->analyze_teams();
 		}
 		
