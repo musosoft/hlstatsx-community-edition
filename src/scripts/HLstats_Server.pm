@@ -832,17 +832,17 @@ sub analyze_teams
 		return;
 	}
 
-	# if ($self->{num_trackable_players} < $self->{minplayers}) {
-	# 	$self->debug_message("TeamBalancer skipped: Not enough players.");
-	# 	&::printNotice("(IGNORED) NOTMINPLAYERS: analyze_teams");
-	# 	return;
-	# }
+	if ($self->{num_trackable_players} < $self->{minplayers}) {
+		$self->debug_message("TeamBalancer skipped: Not enough players.");
+		&::printNotice("(IGNORED) NOTMINPLAYERS: analyze_teams");
+		return;
+	}
 
-	# if ($self->{map_rounds} < 2) {
-	# 	$self->debug_message("TeamBalancer skipped: At least two rounds have to be finished.");
-	# 	&::printNotice("(IGNORED) NOTMINROUNDS: analyze_teams");
-	# 	return;
-	# }
+	if ($self->{map_rounds} < 2) {
+		$self->debug_message("TeamBalancer skipped: At least two rounds have to be finished.");
+		&::printNotice("(IGNORED) NOTMINROUNDS: analyze_teams");
+		return;
+	}
 
 	&::printNotice("analyze_teams");
 	my $ts_skill     = 0;
