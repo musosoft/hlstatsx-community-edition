@@ -946,6 +946,7 @@ sub analyze_teams
 			next;
 		}
 
+		select(undef, undef, undef, 0.15);
 		$self->switch_player(@{$entry}[8], @{$entry}[0]);
 		$action_done++;
 		$needed_players--;
@@ -1004,6 +1005,7 @@ sub analyze_teams
 		last;
 	}
 
+	select(undef, undef, undef, 0.15);
 	$self->debug_message("TeamBalancer: Need CT: " . $need_ct . " | Need T: " . $need_ts);
 	if ($need_ct && @ct_switch_player && $need_ts && @ts_switch_player) {
 		$self->debug_message("TeamBalancer: Switching " . @ct_switch_player[0] . " [CT] <-> " . @ts_switch_player[0] . " [T]");
