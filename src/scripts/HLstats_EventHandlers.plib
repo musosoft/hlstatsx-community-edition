@@ -1504,6 +1504,7 @@ sub doEvent_Frag
 			}
 			$killer->updateDB();
 			$victim->increment("map_deaths");
+			$victim->set("is_dead", "1");
 			if ($weapon ne "zombie_claws_of_death") {
 				$victim->set("is_dead", "0");
 			}
