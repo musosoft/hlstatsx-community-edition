@@ -780,11 +780,11 @@ sub add_round_winner
 	my ($self, $team) = @_;
   
 	&::printNotice("add_round_winner");
-	$self->{winner}[($self->{map_rounds} % $self->{balance_analyze_rounds})] = $team;
 	$self->increment("ba_map_rounds");
 	$self->increment("map_rounds");
 	$self->increment("rounds");
 	$self->increment("total_rounds");
+	$self->{winner}[($self->{map_rounds} % $self->{balance_analyze_rounds})] = $team;
   
 	$self->{ba_ct_wins} = 0;
 	$self->{ba_ts_wins} = 0;
@@ -796,6 +796,18 @@ sub add_round_winner
 		} elsif ($_ eq "ts") {
 			$self->increment("ba_ts_wins");
 		}
+	}
+
+	if ($self->{map_rounds} == 10) {
+		$self->debug_message("TeamBalancer: Round 10 ended, switching stats.");
+
+		my $tmp = $self->{ba_ct_wins};
+		$self->{ba_ct_wins} = $self->{ba_ts_wins};
+		$self->{ba_ts_wins} = $tmp;
+
+		$tmp = $self->{ba_ct_frags};
+		$self->{ba_ct_frags} = $self->{ba_ts_frags};
+		$self->{ba_ts_frags} = $tmp;
 	}
 }
 
