@@ -785,7 +785,15 @@ sub add_round_winner
 	$self->increment("rounds");
 	$self->increment("total_rounds");
 	$self->{winner}[($self->{map_rounds} % $self->{balance_analyze_rounds})] = $team;
-  
+
+	if ($self->{map_rounds} == 10) {
+		$self->debug_message("TeamBalancer: Round 10 ended, switching stats.");
+
+		while (my($k, $val) = each($self->{winner})) {
+			$self->{winner}[$k] = $val eq "ct" ? "ts" : "ct";
+		}
+	}
+
 	$self->{ba_ct_wins} = 0;
 	$self->{ba_ts_wins} = 0;
   
@@ -796,19 +804,6 @@ sub add_round_winner
 		} elsif ($_ eq "ts") {
 			$self->increment("ba_ts_wins");
 		}
-	}
-
-	$self->debug_message("TeamBalancer: map_rounds: " . $self->{map_rounds});
-	$self->debug_message("TeamBalancer: ba_map_rounds: " . $self->{ba_map_rounds});
-	$self->debug_message("TeamBalancer: rounds: " . $self->{rounds});
-	$self->debug_message("TeamBalancer: total_rounds: " . $self->{total_rounds});
-
-	if ($self->{map_rounds} == 10) {
-		$self->debug_message("TeamBalancer: Round 10 ended, switching stats.");
-
-		my $tmp = $self->{ba_ct_wins};
-		$self->{ba_ct_wins} = $self->{ba_ts_wins};
-		$self->{ba_ts_wins} = $tmp;
 	}
 }
 
