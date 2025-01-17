@@ -798,16 +798,17 @@ sub add_round_winner
 		}
 	}
 
+	$self->debug_message("TeamBalancer: map_rounds: " . $self->{map_rounds});
+	$self->debug_message("TeamBalancer: ba_map_rounds: " . $self->{ba_map_rounds});
+	$self->debug_message("TeamBalancer: rounds: " . $self->{rounds});
+	$self->debug_message("TeamBalancer: total_rounds: " . $self->{total_rounds});
+
 	if ($self->{map_rounds} == 10) {
 		$self->debug_message("TeamBalancer: Round 10 ended, switching stats.");
 
 		my $tmp = $self->{ba_ct_wins};
 		$self->{ba_ct_wins} = $self->{ba_ts_wins};
 		$self->{ba_ts_wins} = $tmp;
-
-		$tmp = $self->{ba_ct_frags};
-		$self->{ba_ct_frags} = $self->{ba_ts_frags};
-		$self->{ba_ts_frags} = $tmp;
 	}
 }
 
@@ -845,13 +846,11 @@ sub analyze_teams
 	}
 
 	if ($self->{num_trackable_players} < $self->{minplayers}) {
-		$self->debug_message("TeamBalancer skipped: Not enough players.");
 		&::printNotice("(IGNORED) NOTMINPLAYERS: analyze_teams");
 		return;
 	}
 
 	if ($self->{map_rounds} < 2) {
-		$self->debug_message("TeamBalancer skipped: At least two rounds have to be finished.");
 		&::printNotice("(IGNORED) NOTMINROUNDS: analyze_teams");
 		return;
 	}
@@ -879,7 +878,6 @@ sub analyze_teams
 	while (my($pl, $player) = each(%{$self->{srv_players}}) )
 	{
 		if ($player->{is_bot} && $self->{balance_ignore_bots}) {
-			$self->debug_message("TeamBalancer: Bot " . $player->{name} . " ignored.");
 			next;
 		}
 
@@ -894,7 +892,6 @@ sub analyze_teams
 							$player->{userid},			#8
 							$player->{is_bot},			#9
 							);
-		$self->debug_message("TeamBalancer: Player " . $player->{name} . " added to list. is_dead: " . $player->{is_dead});
 		if ($Player[3] eq "TERRORIST") {
 			push(@{$ts_players[$ts_count]}, @Player);
 			$ts_skill   += $Player[2];
@@ -965,14 +962,12 @@ sub analyze_teams
 	}
 
 	if ($action_done) {
-		$self->debug_message("TeamBalancer: Player(s) switched to even counts.");
 		return;
 	}
 	# End of balance based on team count.
 
 	# Balance based on frags.
 	if ($self->{ba_last_swap} > 0 || $self->{map_rounds} < $self->{balance_start_rounds}) {
-		$self->debug_message("TeamBalancer skipped:");
 		$self->debug_message("ba_last_swap: " . $self->{ba_last_swap});
 		$self->debug_message("map_rounds: " . $self->{map_rounds} . " | balance_start_rounds: " . $self->{balance_start_rounds});
 		return;
@@ -999,7 +994,6 @@ sub analyze_teams
 
 	foreach my $entry (@ct_players) {
 		if ((@{$entry}[7] == 0 && $self->{balance_switch_only_dead}) || ($self->is_admin(@{$entry}[1]) == 1 && !$self->{switch_admins})) {
-			$self->debug_message("TeamBalancer: CT player " . @{$entry}[0] . " ignored. is_dead: " . @{$entry}[7]);
 			next;
 		}
 
@@ -1009,7 +1003,6 @@ sub analyze_teams
 
 	foreach my $entry (@ts_players) {
 		if ((@{$entry}[7] == 0 && $self->{balance_switch_only_dead}) || ($self->is_admin(@{$entry}[1]) == 1 && !$self->{switch_admins})) {
-			$self->debug_message("TeamBalancer: T player " . @{$entry}[0] . " ignored. is_dead: " . @{$entry}[7]);
 			next;
 		}
 
@@ -1018,20 +1011,15 @@ sub analyze_teams
 	}
 
 	select(undef, undef, undef, 0.15);
-	$self->debug_message("TeamBalancer: Need CT: " . $need_ct . " | Need T: " . $need_ts);
 	if ($need_ct && @ct_switch_player && $need_ts && @ts_switch_player) {
-		$self->debug_message("TeamBalancer: Switching " . @ct_switch_player[0] . " [CT] <-> " . @ts_switch_player[0] . " [T]");
 		$self->switch_player(@ct_switch_player[8], @ct_switch_player[0]);
 		$self->switch_player(@ts_switch_player[8], @ts_switch_player[0]);
 	} elsif ($need_ct && @ct_switch_player && !$need_ts) {
-		$self->debug_message("TeamBalancer: Switching " . @ct_switch_player[0] . " [CT]");
 		$self->switch_player(@ct_switch_player[8], @ct_switch_player[0]);
 	} elsif ($need_ts && @ts_switch_player && !$need_ct) {
-		$self->debug_message("TeamBalancer: Switching " . @ts_switch_player[0] . " [T]");
 		$self->switch_player(@ts_switch_player[8], @ts_switch_player[0]);
 	} else {
 		# No players found to switch.
-		$self->debug_message("TeamBalancer: No players found to switch.");
 		return;
 	}
 
