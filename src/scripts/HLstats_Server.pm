@@ -789,7 +789,7 @@ sub add_round_winner
 	if ($self->{map_rounds} == 10) {
 		$self->debug_message("TeamBalancer: Round 10 ended, switching stats.");
 
-		while (my($k, $val) = each($self->{winner})) {
+		while (my($k, $val) = each(@{$self->{winner}})) {
 			$self->{winner}[$k] = $val eq "ct" ? "ts" : "ct";
 		}
 	}
@@ -1195,7 +1195,7 @@ sub update_server_loc
 		my $geoCity = undef;
 
 		try { $geoCity = $::g_gi->city( ip => $server_ip ); }
-		catch { $geoCity = undef; }
+		catch { $geoCity = undef; };
 
 		if ($geoCity) {
 
