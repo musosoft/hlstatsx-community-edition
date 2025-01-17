@@ -786,7 +786,8 @@ sub add_round_winner
 	$self->increment("total_rounds");
 	$self->{winner}[($self->{map_rounds} % $self->{balance_analyze_rounds})] = $team;
 
-	if ($self->{map_rounds} == 10) {
+	# switch stats one round AFTER halftime, because teams in game are switched later
+	if ($self->{map_rounds} == 11) {
 		$self->debug_message("TeamBalancer: Round 10 ended, switching stats.");
 
 		while (my($k, $val) = each(@{$self->{winner}})) {
@@ -950,7 +951,9 @@ sub analyze_teams
 			next;
 		}
 
-		select(undef, undef, undef, 0.15);
+		if (!$action_done) {
+			select(undef, undef, undef, 4.5);
+		}
 		$self->switch_player(@{$entry}[8], @{$entry}[0]);
 		$action_done++;
 		$needed_players--;
@@ -963,8 +966,6 @@ sub analyze_teams
 
 	# Balance based on frags.
 	if ($self->{ba_last_swap} > 0 || $self->{map_rounds} < $self->{balance_start_rounds}) {
-		$self->debug_message("ba_last_swap: " . $self->{ba_last_swap});
-		$self->debug_message("map_rounds: " . $self->{map_rounds} . " | balance_start_rounds: " . $self->{balance_start_rounds});
 		return;
 	}
 
@@ -1005,7 +1006,7 @@ sub analyze_teams
 		last;
 	}
 
-	select(undef, undef, undef, 0.15);
+	select(undef, undef, undef, 4.5);
 	if ($need_ct && @ct_switch_player && $need_ts && @ts_switch_player) {
 		$self->switch_player(@ct_switch_player[8], @ct_switch_player[0]);
 		$self->switch_player(@ts_switch_player[8], @ts_switch_player[0]);
@@ -1014,7 +1015,7 @@ sub analyze_teams
 	} elsif ($need_ts && @ts_switch_player && !$need_ct) {
 		$self->switch_player(@ts_switch_player[8], @ts_switch_player[0]);
 	} else {
-		# No players found to switch.
+		# No players found or needed to switch.
 		return;
 	}
 
