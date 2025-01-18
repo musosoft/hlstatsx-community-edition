@@ -814,7 +814,6 @@ sub add_round_winner
 	$self->increment("map_rounds");
 	$self->increment("rounds");
 	$self->increment("total_rounds");
-	$self->{winner}[($self->{map_rounds} % $self->{balance_analyze_rounds})] = $team;
 
 	# switch stats one round AFTER halftime, because teams in game are switched on start of next round
 	if ($self->{mp_halftime} && $self->{map_rounds} == int($self->{mp_maxrounds} / 2) + 1) {
@@ -824,6 +823,8 @@ sub add_round_winner
 			$self->{winner}[$k] = $val eq "ct" ? "ts" : "ct";
 		}
 	}
+
+	$self->{winner}[($self->{map_rounds} % $self->{balance_analyze_rounds})] = $team;
 
 	$self->{ba_ct_wins} = 0;
 	$self->{ba_ts_wins} = 0;
