@@ -814,7 +814,6 @@ sub add_round_winner
 	$self->increment("map_rounds");
 	$self->increment("rounds");
 	$self->increment("total_rounds");
-	$self->{winner}[($self->{map_rounds} % $self->{balance_analyze_rounds})] = $team;
 
 	# switch stats one round AFTER halftime, because teams in game are switched on start of next round
 	if ($self->{mp_halftime} && $self->{map_rounds} == int($self->{mp_maxrounds} / 2) + 1) {
@@ -824,6 +823,8 @@ sub add_round_winner
 			$self->{winner}[$k] = $val eq "ct" ? "ts" : "ct";
 		}
 	}
+
+	$self->{winner}[($self->{map_rounds} % $self->{balance_analyze_rounds})] = $team;
 
 	$self->{ba_ct_wins} = 0;
 	$self->{ba_ts_wins} = 0;
@@ -984,6 +985,7 @@ sub analyze_teams
 		if (!$action_done) {
 			select(undef, undef, undef, 4.5);
 		}
+		$self->messageAll("HLstatsX:CE - ATB - Player [" . @{$entry}[3] . "] " . @{$entry}[0] . " was switched to ensure an even team count.", 0, 1);
 		$self->switch_player(@{$entry}[8], @{$entry}[0]);
 		$action_done++;
 		$needed_players--;
@@ -1038,11 +1040,14 @@ sub analyze_teams
 
 	select(undef, undef, undef, 4.5);
 	if ($need_ct && @ct_switch_player && $need_ts && @ts_switch_player) {
+		$self->messageAll("HLstatsX:CE - ATB - Switching players [CT] " . @ct_switch_player[0] . " <-> [T] " . @ts_switch_player[0] . " to balance teams.", 0, 1);
 		$self->switch_player(@ct_switch_player[8], @ct_switch_player[0]);
 		$self->switch_player(@ts_switch_player[8], @ts_switch_player[0]);
 	} elsif ($need_ct && @ct_switch_player && !$need_ts) {
+		$self->messageAll("HLstatsX:CE - ATB - Player [CT] " . @ct_switch_player[0] . " was switched to balance teams.", 0, 1);
 		$self->switch_player(@ct_switch_player[8], @ct_switch_player[0]);
 	} elsif ($need_ts && @ts_switch_player && !$need_ct) {
+		$self->messageAll("HLstatsX:CE - ATB - Player [T] " . @ts_switch_player[0] . " was switched to balance teams.", 0, 1);
 		$self->switch_player(@ts_switch_player[8], @ts_switch_player[0]);
 	} else {
 		# No players found or needed to switch.
