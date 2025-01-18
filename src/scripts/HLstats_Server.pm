@@ -816,9 +816,9 @@ sub add_round_winner
 	$self->increment("total_rounds");
 	$self->{winner}[($self->{map_rounds} % $self->{balance_analyze_rounds})] = $team;
 
-	# switch stats one round AFTER halftime, because teams in game are switched later
-	if ($self->{map_rounds} == 11) {
-		$self->debug_message("TeamBalancer: Round 10 ended, switching stats.");
+	# switch stats one round AFTER halftime, because teams in game are switched on start of next round
+	if ($self->{mp_halftime} && $self->{map_rounds} == int($self->{mp_maxrounds} / 2) + 1) {
+		$self->debug_message("TeamBalancer: Halftime ended, switching stats.");
 
 		while (my($k, $val) = each(@{$self->{winner}})) {
 			$self->{winner}[$k] = $val eq "ct" ? "ts" : "ct";
