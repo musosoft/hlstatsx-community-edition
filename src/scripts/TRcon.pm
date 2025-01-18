@@ -453,6 +453,27 @@ sub getVisiblePlayers
   return ($max_players);
 }
 
+sub getMaxRounds
+{
+  my ($self) = @_;
+  my $status = $self->execute("mp_maxrounds");
+  
+  my @lines = split(/[\r\n]+/, $status);
+  
+
+  my $max_rounds = 0;
+  foreach my $line (@lines)
+  {
+   # "mp_maxrounds" = "0"
+   #       - max number of rounds to play before server changes maps
+    if ($line =~ /^\s*"mp_maxrounds"\s*=\s*"([-0-9]+)".*$/x)
+    {
+      $max_rounds   = $1;
+    }
+  }
+  return ($max_rounds);
+}
+
 my %l4d_difficulties = (
 	'Easy'       => 1,
 	'Normal'     => 2,
