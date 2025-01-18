@@ -44,7 +44,7 @@ do "$::opt_libdir/HLstats_GameConstants.plib";
 
 sub new
 {
-	my ($class_name, $serverId, $address, $port, $server_name, $rcon_pass, $game, $publicaddress, $gameengine, $realgame, $maxplayers, $mp_maxrounds) = @_;
+	my ($class_name, $serverId, $address, $port, $server_name, $rcon_pass, $game, $publicaddress, $gameengine, $realgame, $maxplayers, $mp_maxrounds, $mp_timelimit, $mp_halftime) = @_;
 	
 	my ($self) = {};
 	
@@ -82,6 +82,8 @@ sub new
 	$self->{maxplayers}    = $maxplayers;
 	$self->{difficulty}    = 0;
 	$self->{mp_maxrounds}  = $mp_maxrounds;
+	$self->{mp_timelimit}  = $mp_timelimit;
+	$self->{mp_halftime}  = $mp_halftime;
 	
     $self->{players}       = 0;
  	$self->{rounds}        = 0;
@@ -483,18 +485,22 @@ sub rcon_getStatus
 	my $servhostname = "";
 	my $difficulty = 0;
 	my $mp_maxrounds = 0;
+	my $mp_timelimit = 0;
+	my $mp_halftime = 0;
 	
 	if (($rcon_obj) && ($::g_rcon == 1) && ($self->{rcon} ne "")) {
 		($servhostname, $map_result, $max_player_result, $difficulty) = $rcon_obj->getServerData();
 		($visible_maxplayers) = $rcon_obj->getVisiblePlayers();
 		($mp_maxrounds) = $rcon_obj->getMaxRounds();
+		($mp_timelimit) = $rcon_obj->getTimeLimit();
+		($mp_halftime) = $rcon_obj->getHalfTime();
 		if (($visible_maxplayers != -1) && ($visible_maxplayers < $max_player_result)) {
 			$max_player_result = $visible_maxplayers;
 		}
 	} else {
 		&::printNotice("Rcon error: No Object available");
     }
-    return ($map_result, $max_player_result, $servhostname, $difficulty, $mp_maxrounds);
+    return ($map_result, $max_player_result, $servhostname, $difficulty, $mp_maxrounds, $mp_timelimit, $mp_halftime);
 }
 
 sub rcon_getplayers
@@ -648,12 +654,14 @@ sub get_map
 			my $temp_maxplayers = -1;
 			my $servhostname	  = "";
 			my $mp_maxrounds      = 0;
+			my $mp_timelimit      = 0;
+			my $mp_halftime      = 0;
 			my $difficulty      = 0;
 			my $update		  = 0;
 			
 			if ($self->{rcon_obj})
 			{
-				($temp_map, $temp_maxplayers, $servhostname, $difficulty, $mp_maxrounds) = $self->rcon_getStatus();
+				($temp_map, $temp_maxplayers, $servhostname, $difficulty, $mp_maxrounds, $mp_timelimit, $mp_halftime) = $self->rcon_getStatus();
 				
 				if ($temp_map eq "") {
 					goto STATUSFAIL;
@@ -673,9 +681,23 @@ sub get_map
 				if (($difficulty > 0) && ($self->{play_game} == L4D())) {
 					$self->{difficulty} = $difficulty;
 				}
-				if (($mp_maxrounds > 0) && ($self->{play_game} == CSS())) {
-					$self->{mp_maxrounds} = $mp_maxrounds;
-					$self->debug_message("mp_maxrounds: $mp_maxrounds");
+				if (
+					$self->{play_game} == CSS() ||
+					$self->{play_game} == CSGO() ||
+					$self->{play_game} == CS2()
+				) {
+					if ($mp_timelimit > 0) {
+						$self->{mp_timelimit} = $mp_timelimit;
+						$self->debug_message("mp_timelimit: $mp_timelimit");
+					}
+					if ($mp_maxrounds > 0) {
+						$self->{mp_maxrounds} = $mp_maxrounds;
+						$self->debug_message("mp_maxrounds: $mp_maxrounds");
+					}
+					if ($mp_halftime > 0) {
+						$self->{mp_halftime} = $mp_halftime;
+						$self->debug_message("mp_halftime: $mp_halftime");
+					}
 				}
 				if (($self->{update_hostname} > 0) && ($self->{name} ne $servhostname) && ($servhostname ne "")) {
 						$self->{name} = $servhostname;
