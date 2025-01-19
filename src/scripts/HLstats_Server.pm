@@ -491,9 +491,17 @@ sub rcon_getStatus
 	if (($rcon_obj) && ($::g_rcon == 1) && ($self->{rcon} ne "")) {
 		($servhostname, $map_result, $max_player_result, $difficulty) = $rcon_obj->getServerData();
 		($visible_maxplayers) = $rcon_obj->getVisiblePlayers();
-		($mp_maxrounds) = $rcon_obj->getMaxRounds();
-		($mp_timelimit) = $rcon_obj->getTimeLimit();
-		($mp_halftime) = $rcon_obj->getHalfTime();
+		
+		if (
+			$self->{play_game} == CSS() ||
+			$self->{play_game} == CSGO() ||
+			$self->{play_game} == CS2()
+		) {
+			($mp_maxrounds) = $rcon_obj->getMaxRounds();
+			($mp_timelimit) = $rcon_obj->getTimeLimit();
+			($mp_halftime) = $rcon_obj->getHalfTime();
+		}
+
 		if (($visible_maxplayers != -1) && ($visible_maxplayers < $max_player_result)) {
 			$max_player_result = $visible_maxplayers;
 		}
