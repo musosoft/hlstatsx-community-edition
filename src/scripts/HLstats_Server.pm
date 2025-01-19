@@ -696,15 +696,12 @@ sub get_map
 				) {
 					if ($mp_timelimit > 0) {
 						$self->{mp_timelimit} = $mp_timelimit;
-						$self->debug_message("mp_timelimit: $mp_timelimit");
 					}
 					if ($mp_maxrounds > 0) {
 						$self->{mp_maxrounds} = $mp_maxrounds;
-						$self->debug_message("mp_maxrounds: $mp_maxrounds");
 					}
 					if ($mp_halftime > 0) {
 						$self->{mp_halftime} = $mp_halftime;
-						$self->debug_message("mp_halftime: $mp_halftime");
 					}
 				}
 				if (($self->{update_hostname} > 0) && ($self->{name} ne $servhostname) && ($servhostname ne "")) {
@@ -825,7 +822,7 @@ sub add_round_winner
 
 	# switch stats one round AFTER halftime, because teams in game are switched on start of next round
 	if ($self->{mp_halftime} && $self->{map_rounds} == int($self->{mp_maxrounds} / 2) + 1) {
-		$self->debug_message("TeamBalancer: Halftime ended, switching stats.");
+		$self->debug_message("HLstatsX:CE - ATB: Halftime ended, switching stats.");
 
 		while (my($k, $val) = each(@{$self->{winner}})) {
 			$self->{winner}[$k] = $val eq "ct" ? "ts" : "ct";
@@ -951,7 +948,7 @@ sub analyze_teams
 	# 	$cmd_str = $self->{player_admin_command}." $admin_msg";
 	# 	$self->dorcon($cmd_str);
 	# }
-	$self->debug_message("AUTO-TEAM BALANCER: CT ($ct_count) $ct_kills:$ct_deaths  [$ct_wins - $ts_wins] $ts_kills:$ts_deaths ($ts_count) TS");
+	$self->debug_message("HLstatsX:CE - ATB: CT ($ct_count) $ct_kills:$ct_deaths  [$ct_wins - $ts_wins] $ts_kills:$ts_deaths ($ts_count) TS");
 
 	$self->messageAll("HLstatsX:CE - ATB - Checking Teams", 0, 1);
 

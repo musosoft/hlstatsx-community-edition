@@ -28,7 +28,7 @@
 #include <cstrike>
 #include <clientprefs>
 
-#define VERSION "1.6.19"
+#define VERSION "1.11.4"
 #define HLXTAG "HLstatsX:CE"
 
 new Handle: hlx_block_chat_commands;
