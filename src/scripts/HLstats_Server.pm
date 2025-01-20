@@ -822,7 +822,7 @@ sub add_round_winner
 
 	# switch stats one round AFTER halftime, because teams in game are switched on start of next round
 	if ($self->{mp_halftime} && $self->{map_rounds} == int($self->{mp_maxrounds} / 2) + 1) {
-		$self->debug_message("HLstatsX:CE - ATB: Halftime ended, switching stats.");
+		# $self->debug_message("HLstatsX:CE - ATB: Halftime ended, switching stats.");
 
 		while (my($k, $val) = each(@{$self->{winner}})) {
 			$self->{winner}[$k] = $val eq "ct" ? "ts" : "ct";
@@ -854,9 +854,9 @@ sub switch_player
 		$rcmd = $self->{player_command};
 	}
 	$self->dorcon(sprintf("%s %s %s", $rcmd, $self->format_userid($playerid), $self->quoteparam("HLstatsX:CE - You were switched to balance teams")));
-	if ($self->{player_admin_command} ne "") {
-		$self->dorcon(sprintf("%s %s",$self->{player_admin_command}, $self->quoteparam("HLstatsX:CE - $name was switched to balance teams")));
-	}
+	# if ($self->{player_admin_command} ne "") {
+	# 	$self->dorcon(sprintf("%s %s",$self->{player_admin_command}, $self->quoteparam("HLstatsX:CE - $name was switched to balance teams")));
+	# }
 }
 
 sub debug_message
@@ -943,12 +943,7 @@ sub analyze_teams
 
 	&::printEvent("TEAM", "Checking Teams", 1);
 
-	# if ($self->{player_events} == 1 && $self->{player_admin_command} ne "") {
-	# 	$admin_msg = "AUTO-TEAM BALANCER: CT ($ct_count) $ct_kills:$ct_deaths  [$ct_wins - $ts_wins] $ts_kills:$ts_deaths ($ts_count) TS";
-	# 	$cmd_str = $self->{player_admin_command}." $admin_msg";
-	# 	$self->dorcon($cmd_str);
-	# }
-	$self->debug_message("HLstatsX:CE - ATB: CT ($ct_count) $ct_kills:$ct_deaths  [$ct_wins - $ts_wins] $ts_kills:$ts_deaths ($ts_count) TS");
+	# $self->debug_message("HLstatsX:CE - ATB: CT ($ct_count) $ct_kills:$ct_deaths  [$ct_wins - $ts_wins] $ts_kills:$ts_deaths ($ts_count) TS");
 
 	$self->messageAll("HLstatsX:CE - ATB - Checking Teams", 0, 1);
 
