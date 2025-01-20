@@ -852,14 +852,14 @@ color_team_entities(String:message[192])
 			{
 				if (ColorSlotArray[2] > -1)
 				{
-					if (ReplaceString(message, sizeof(message), "TERRORIST ", "\x03TERRORIST\x01 ") > 0)
+					if (ReplaceString(message, sizeof(message), "TERRORIST ", "\x03Terrorists\x01 ") > 0)
 					{
 						return ColorSlotArray[2];
 					}
 				}
 				if (ColorSlotArray[3] > -1)
 				{
-					if (ReplaceString(message, sizeof(message), "CT ", "\x03CT\x01 ") > 0)
+					if (ReplaceString(message, sizeof(message), "CT ", "\x03​Counter-Terrorists\x01 ") > 0)
 					{
 						return ColorSlotArray[3];
 					}
@@ -1983,7 +1983,7 @@ public Action: HLstatsX_Event_PlyTeamChange(Handle:event, const String:name[], b
 
 	return Plugin_Continue;
 }
-						
+
 
 
 swap_player(player_index)
@@ -2041,12 +2041,7 @@ swap_player(player_index)
 					new weapon_entity = GetPlayerWeaponSlot(player_index, 4);
 					if (weapon_entity > 0)
 					{
-						decl String: class_name[32];
-						GetEdictClassname(weapon_entity, class_name, sizeof(class_name));
-						if (strcmp(class_name, "weapon_c4") == 0)
-						{
-							RemovePlayerItem(player_index, weapon_entity);
-						}
+						CS_DropWeapon( player_index, weapon_entity, true, true );
 					}
 				}
 				else
