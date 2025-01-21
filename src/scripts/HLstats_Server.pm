@@ -943,7 +943,7 @@ sub analyze_teams
 
 	&::printEvent("TEAM", "Checking Teams", 1);
 
-	# $self->debug_message("HLstatsX:CE - ATB: CT ($ct_count) $ct_kills:$ct_deaths  [$ct_wins - $ts_wins] $ts_kills:$ts_deaths ($ts_count) TS");
+	$self->debug_message("HLstatsX:CE - ATB: CT ($ct_count) $ct_kills:$ct_deaths  [$ct_wins - $ts_wins] $ts_kills:$ts_deaths ($ts_count) TS");
 
 	$self->messageAll("HLstatsX:CE - ATB - Checking Teams", 0, 1);
 
@@ -956,11 +956,13 @@ sub analyze_teams
 	# If smaller team is also losing, give them best enemy player(s). Otherwise just give them worst player(s) to even counts.
 	my $needed_players = 0;
 	my @possible_players = ();
+	my $count_as_skill_balance = 0;
 
 	if ($ct_count + 1 < $ts_count) {
 		$needed_players = floor( ($ts_count - $ct_count) / 2);
 		if ($ct_wins <= $self->{balance_max_wins}) {
 			@possible_players = sort { $b->[6] <=> $a->[6]} @ts_players;  # best player
+			$count_as_skill_balance = 1;
 		} else {
 			@possible_players = sort { $a->[6] <=> $b->[6]} @ts_players;  # worst player
 		}
@@ -968,6 +970,7 @@ sub analyze_teams
 		$needed_players = floor( ($ct_count - $ts_count) / 2);
 		if ($ts_wins <= $self->{balance_max_wins}) {
 			@possible_players = sort { $b->[6] <=> $a->[6]} @ct_players;  # best player
+			$count_as_skill_balance = 1;
 		} else {
 			@possible_players = sort { $a->[6] <=> $b->[6]} @ct_players;  # worst player
 		}
@@ -992,6 +995,9 @@ sub analyze_teams
 	}
 
 	if ($action_done) {
+		if ($count_as_skill_balance) {
+			$self->{ba_last_swap} = $self->{balance_rounds_delay};
+		}
 		return;
 	}
 	# End of balance based on team count.
@@ -1008,6 +1014,7 @@ sub analyze_teams
 		$need_ts = 1;
 
 		@ts_players = sort { $b->[6] <=> $a->[6]} @ts_players;  # best player
+		shift(@ts_players); # remove first best
 		@ct_players = sort { $a->[6] <=> $b->[6]} @ct_players;  # worst player
 	} elsif ($ts_wins <= $self->{balance_max_wins}) {
 		$need_ct = 1;
@@ -1015,6 +1022,7 @@ sub analyze_teams
 
 		@ts_players = sort { $a->[6] <=> $b->[6]} @ts_players;  # worst player
 		@ct_players = sort { $b->[6] <=> $a->[6]} @ct_players;  # best player
+		shift(@ct_players); # remove first best
 	}
 
 	my @ct_switch_player = ();
@@ -1040,7 +1048,7 @@ sub analyze_teams
 
 	select(undef, undef, undef, 4.5);
 	if ($need_ct && @ct_switch_player && $need_ts && @ts_switch_player) {
-		$self->messageAll("HLstatsX:CE - ATB - Switching players [CT] " . @ct_switch_player[0] . " <-> [T] " . @ts_switch_player[0] . " to balance teams.", 0, 1);
+		$self->messageAll("HLstatsX:CE - ATB - Switching players [CT] " . @ct_switch_player[0] . " ⇆ [T] " . @ts_switch_player[0] . " to balance teams.", 0, 1);
 		$self->switch_player(@ct_switch_player[8], @ct_switch_player[0]);
 		$self->switch_player(@ts_switch_player[8], @ts_switch_player[0]);
 	} elsif ($need_ct && @ct_switch_player && !$need_ts) {
