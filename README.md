@@ -50,14 +50,14 @@ Thank you for cooperating, submitting issues, pull requests or any other help. I
 `web` image (See [./src/web/config.php](./src/web/config.php) for supported environment variables):
 
 ```sh
-docker run --rm -it -e DB_ADDR=db -e DB_NAME=hlstatsxce -e DB_USER=hlstatsxce -e DB_PASS=hlstatsxce -p 80:80 startersclan/hlstatsx-community-edition:1.11.3-web
+docker run --rm -it -e DB_ADDR=db -e DB_NAME=hlstatsxce -e DB_USER=hlstatsxce -e DB_PASS=hlstatsxce -p 80:80 startersclan/hlstatsx-community-edition:1.11.4-web
 ```
 
 `daemon` image:
 
 ```sh
 # Use --help for usage
-docker run --rm -it -p 27500:27500/udp startersclan/hlstatsx-community-edition:1.11.3-daemon --db-host=db:3306 --db-name=hlstatsxce --db-username=hlstatsxce --db-password=hlstatsxce #--help
+docker run --rm -it -p 27500:27500/udp startersclan/hlstatsx-community-edition:1.11.4-daemon --db-host=db:3306 --db-name=hlstatsxce --db-username=hlstatsxce --db-password=hlstatsxce #--help
 ```
 
 ### Docker Compose
