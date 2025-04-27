@@ -44,7 +44,7 @@ do "$::opt_libdir/HLstats_GameConstants.plib";
 
 sub new
 {
-	my ($class_name, $serverId, $address, $port, $server_name, $rcon_pass, $game, $publicaddress, $gameengine, $realgame, $maxplayers) = @_;
+	my ($class_name, $serverId, $address, $port, $server_name, $rcon_pass, $game, $publicaddress, $gameengine, $realgame, $maxplayers, $mp_maxrounds, $mp_timelimit, $mp_halftime) = @_;
 	
 	my ($self) = {};
 	
@@ -81,6 +81,9 @@ sub new
 	$self->{minplayers}    = 6;
 	$self->{maxplayers}    = $maxplayers;
 	$self->{difficulty}    = 0;
+	$self->{mp_maxrounds}  = $mp_maxrounds;
+	$self->{mp_timelimit}  = $mp_timelimit;
+	$self->{mp_halftime}  = $mp_halftime;
 	
     $self->{players}       = 0;
  	$self->{rounds}        = 0;
@@ -115,6 +118,12 @@ sub new
 	$self->{ba_map_rounds}    = 0;
 	$self->{ba_last_swap}     = 0;
 	$self->{ba_player_switch} = 0;  # player switched on his own
+	$self->{balance_switch_only_dead} = 0;
+	$self->{balance_ignore_bots} = 0;
+	$self->{balance_start_rounds} = 0;
+	$self->{balance_rounds_delay} = 0;
+	$self->{balance_analyze_rounds} = 0;
+	$self->{balance_max_wins} = 0;
 	
 	# Messaging commands
 	$self->{show_stats}                  	= 0;
@@ -475,17 +484,31 @@ sub rcon_getStatus
     my $max_player_result = -1;
 	my $servhostname = "";
 	my $difficulty = 0;
+	my $mp_maxrounds = 0;
+	my $mp_timelimit = 0;
+	my $mp_halftime = 0;
 	
 	if (($rcon_obj) && ($::g_rcon == 1) && ($self->{rcon} ne "")) {
-		($servhostname, $map_result, $max_player_result, $difficulty)    = $rcon_obj->getServerData();
-		($visible_maxplayers)                = $rcon_obj->getVisiblePlayers();
+		($servhostname, $map_result, $max_player_result, $difficulty) = $rcon_obj->getServerData();
+		($visible_maxplayers) = $rcon_obj->getVisiblePlayers();
+		
+		if (
+			$self->{play_game} == CSS() ||
+			$self->{play_game} == CSGO() ||
+			$self->{play_game} == CS2()
+		) {
+			($mp_maxrounds) = $rcon_obj->getMaxRounds();
+			($mp_timelimit) = $rcon_obj->getTimeLimit();
+			($mp_halftime) = $rcon_obj->getHalfTime();
+		}
+
 		if (($visible_maxplayers != -1) && ($visible_maxplayers < $max_player_result)) {
 			$max_player_result = $visible_maxplayers;
 		}
 	} else {
 		&::printNotice("Rcon error: No Object available");
     }
-    return ($map_result, $max_player_result, $servhostname, $difficulty);
+    return ($map_result, $max_player_result, $servhostname, $difficulty, $mp_maxrounds, $mp_timelimit, $mp_halftime);
 }
 
 sub rcon_getplayers
@@ -638,12 +661,15 @@ sub get_map
 			my $temp_map        = "";
 			my $temp_maxplayers = -1;
 			my $servhostname	  = "";
+			my $mp_maxrounds      = 0;
+			my $mp_timelimit      = 0;
+			my $mp_halftime      = 0;
 			my $difficulty      = 0;
 			my $update		  = 0;
 			
 			if ($self->{rcon_obj})
 			{
-				($temp_map, $temp_maxplayers, $servhostname, $difficulty) = $self->rcon_getStatus();
+				($temp_map, $temp_maxplayers, $servhostname, $difficulty, $mp_maxrounds, $mp_timelimit, $mp_halftime) = $self->rcon_getStatus();
 				
 				if ($temp_map eq "") {
 					goto STATUSFAIL;
@@ -662,6 +688,21 @@ sub get_map
 				}
 				if (($difficulty > 0) && ($self->{play_game} == L4D())) {
 					$self->{difficulty} = $difficulty;
+				}
+				if (
+					$self->{play_game} == CSS() ||
+					$self->{play_game} == CSGO() ||
+					$self->{play_game} == CS2()
+				) {
+					if ($mp_timelimit > 0) {
+						$self->{mp_timelimit} = $mp_timelimit;
+					}
+					if ($mp_maxrounds > 0) {
+						$self->{mp_maxrounds} = $mp_maxrounds;
+					}
+					if ($mp_halftime > 0) {
+						$self->{mp_halftime} = $mp_halftime;
+					}
 				}
 				if (($self->{update_hostname} > 0) && ($self->{name} ne $servhostname) && ($servhostname ne "")) {
 						$self->{name} = $servhostname;
@@ -774,12 +815,22 @@ sub add_round_winner
 	my ($self, $team) = @_;
   
 	&::printNotice("add_round_winner");
-	$self->{winner}[($self->{map_rounds} % 7)] = $team;
 	$self->increment("ba_map_rounds");
 	$self->increment("map_rounds");
 	$self->increment("rounds");
 	$self->increment("total_rounds");
-  
+
+	# switch stats one round AFTER halftime, because teams in game are switched on start of next round
+	if ($self->{mp_halftime} && $self->{map_rounds} == int($self->{mp_maxrounds} / 2) + 1) {
+		# $self->debug_message("HLstatsX:CE - ATB: Halftime ended, switching stats.");
+
+		while (my($k, $val) = each(@{$self->{winner}})) {
+			$self->{winner}[$k] = $val eq "ct" ? "ts" : "ct";
+		}
+	}
+
+	$self->{winner}[($self->{map_rounds} % $self->{balance_analyze_rounds})] = $team;
+
 	$self->{ba_ct_wins} = 0;
 	$self->{ba_ts_wins} = 0;
   
@@ -803,293 +854,217 @@ sub switch_player
 		$rcmd = $self->{player_command};
 	}
 	$self->dorcon(sprintf("%s %s %s", $rcmd, $self->format_userid($playerid), $self->quoteparam("HLstatsX:CE - You were switched to balance teams")));
-	if ($self->{player_admin_command} ne "") {
-		$self->dorcon(sprintf("%s %s",$self->{player_admin_command}, $self->quoteparam("HLstatsX:CE - $name was switched to balance teams")));
-	}
+	# if ($self->{player_admin_command} ne "") {
+	# 	$self->dorcon(sprintf("%s %s",$self->{player_admin_command}, $self->quoteparam("HLstatsX:CE - $name was switched to balance teams")));
+	# }
 }
 
+sub debug_message
+{
+	my ($self, $message) = @_;
+
+	if ($self->{player_events} == 1 && $self->{player_admin_command} ne "") {
+		$cmd_str = $self->{player_admin_command}." [DEBUG] $message";
+		$self->dorcon($cmd_str);
+	}
+}
 
 sub analyze_teams
 {
 	my ($self) = @_;
-  
-	if (($::g_stdin == 0) && ($self->{num_trackable_players} < $self->{minplayers})) 
-	{
+
+	if ($::g_stdin != 0 || $self->{ba_enabled} == 0) {
+		return;
+	}
+
+	if ($self->{num_trackable_players} < $self->{minplayers}) {
 		&::printNotice("(IGNORED) NOTMINPLAYERS: analyze_teams");
+		return;
 	}
-	elsif (($::g_stdin == 0) && ($self->{ba_enabled} > 0))
+
+	if ($self->{map_rounds} < 2) {
+		&::printNotice("(IGNORED) NOTMINROUNDS: analyze_teams");
+		return;
+	}
+
+	&::printNotice("analyze_teams");
+	my $ts_skill     = 0;
+	my $ts_avg_skill = 0;
+	my $ts_count     = 0;
+	my $ts_wins      = $self->{ba_ts_wins};
+	my $ts_kills     = 0;
+	my $ts_deaths    = 0;
+	my $ts_diff      = 0;
+	my @ts_players   = ();
+
+	my $ct_skill     = 0;
+	my $ct_avg_skill = 0;
+	my $ct_count     = 0;
+	my $ct_wins      = $self->{ba_ct_wins};
+	my $ct_kills     = 0;
+	my $ct_deaths    = 0;
+	my $ct_diff      = 0;
+	my @ct_players   = ();
+
+	my $server_id   = $self->{id};
+	while (my($pl, $player) = each(%{$self->{srv_players}}) )
 	{
-		&::printNotice("analyze_teams");
-		my $ts_skill     = 0;
-		my $ts_avg_skill = 0;
-		my $ts_count     = 0;
-		my $ts_wins      = $self->{ba_ts_wins};
-		my $ts_kills     = 0;
-		my $ts_deaths    = 0;
-		my $ts_diff      = 0;
-		my @ts_players   = ();
-
-		my $ct_skill     = 0;
-		my $ct_avg_skill = 0;
-		my $ct_count     = 0;
-		my $ct_wins      = $self->{ba_ct_wins};
-		my $ct_kills     = 0;
-		my $ct_deaths    = 0;
-		my $ct_diff      = 0;
-		my @ct_players   = ();
-		
-		my $server_id   = $self->{id};
-		while ( my($pl, $player) = each(%{$self->{srv_players}}) )
-		{	
-			my @Player      = ( $player->{name},			#0
-								$player->{uniqueid},		#1
-								$player->{skill},   		#2
-								$player->{team},			#3
-								$player->{map_kills},		#4
-								$player->{map_deaths},		#5
-								($player->{map_kills}-$player->{map_deaths}), #6
-								$player->{is_dead},			#7
-								$player->{userid},			#8
-								);
-    
-			if ($Player[3] eq "TERRORIST")
-			{
-				push(@{$ts_players[$ts_count]}, @Player);
-				$ts_skill   += $Player[2]; 
-				$ts_count   += 1;
-				$ts_kills   += $Player[4];
-				$ts_deaths  += $Player[5];
-			}
-			elsif ($Player[3] eq "CT")
-			{
-				push(@{$ct_players[$ct_count]}, @Player);
-				$ct_skill   += $Player[2]; 
-				$ct_count   += 1;
-				$ct_kills   += $Player[4]; 
-				$ct_deaths  += $Player[5]; 
-			}
+		if ($player->{is_bot} && $self->{balance_ignore_bots}) {
+			next;
 		}
-		@ct_players = sort { $b->[6] <=> $a->[6]} @ct_players;
-		@ts_players = sort { $b->[6] <=> $a->[6]} @ts_players;
-    
-		&::printEvent("TEAM", "Checking Teams", 1);
-		$admin_msg = "AUTO-TEAM BALANCER: CT ($ct_count) $ct_kills:$ct_deaths  [$ct_wins - $ts_wins] $ts_kills:$ts_deaths ($ts_count) TS";
-		if ($self->{player_events} == 1)  
-		{
-			if ($self->{player_admin_command} ne "") {
-				$cmd_str = $self->{player_admin_command}." $admin_msg";
-				$self->dorcon($cmd_str);
-			}  
+
+		my @Player      = ( $player->{name},			#0
+							$player->{uniqueid},		#1
+							$player->{skill},   		#2
+							$player->{team},			#3
+							$player->{map_kills},		#4
+							$player->{map_deaths},		#5
+							($player->{map_kills}-$player->{map_deaths}), #6
+							$player->{is_dead},			#7
+							$player->{userid},			#8
+							$player->{is_bot},			#9
+							);
+		if ($Player[3] eq "TERRORIST") {
+			push(@{$ts_players[$ts_count]}, @Player);
+			$ts_skill   += $Player[2];
+			$ts_count   += 1;
+			$ts_kills   += $Player[4];
+			$ts_deaths  += $Player[5];
+		} elsif ($Player[3] eq "CT") {
+			push(@{$ct_players[$ct_count]}, @Player);
+			$ct_skill   += $Player[2];
+			$ct_count   += 1;
+			$ct_kills   += $Player[4];
+			$ct_deaths  += $Player[5];
 		}
-    
-		$self->messageAll("HLstatsX:CE - ATB - Checking Teams", 0, 1);
-
-		if ($self->{ba_map_rounds} >= 2)    # need all players for numerical balacing, at least 2 for getting all players
-		{
-			my $action_done = 0;
-			if ($self->{ba_last_swap} > 0)
-			{
-				$self->{ba_last_swap}--;
-			}
-      
-			if ($ct_count + 1 < $ts_count)         # ct need players
-			{
-				$needed_players = floor( ($ts_count - $ct_count) / 2);
-				if ($ct_wins < 2)
-				{
-					@ts_players = sort { $b->[7] <=> $a->[7]} @ts_players;
-				}
-				else
-				{
-					@ts_players = sort { $a->[7] <=> $b->[7]} @ts_players;
-				}
-				foreach my $entry (@ts_players) 
-				{
-					if ($needed_players > 0) # how many we need to make teams even (only numerical)
-					{
-						if (@{$entry}[7] == 1)  # only dead players!!
-						{
-							if (($self->{switch_admins} == 1) || (($self->{switch_admins} == 0) && ($self->is_admin(@{$entry}[1]) == 0)))  {
-								$self->switch_player(@{$entry}[8], @{$entry}[0]); 
-								$action_done++;
-								$needed_players--;
-							}
-						}
-					}
-				}
-			}
-			elsif  ($ts_count + 1 < $ct_count)  # ts need players
-			{
-				$needed_players = floor( ($ct_count - $ts_count) / 2);
-				if ($ts_wins < 2)
-				{
-					@ct_players = sort { $b->[6] <=> $a->[6]} @ct_players;  # best player
-				}
-				else
-				{
-					@ct_players = sort { $a->[6] <=> $b->[6]} @ct_players;  # worst player
-				}
-				foreach my $entry (@ct_players) 
-				{
-					if ($needed_players > 0) # how many we need to make teams even (only numerical)
-					{
-						if (@{$entry}[7] == 1)  # only dead players!!
-						{
-							if (($self->{switch_admins} == 1) || (($self->{switch_admins} == 0) && ($self->is_admin(@{$entry}[1]) == 0)))  {
-								$self->switch_player(@{$entry}[8], @{$entry}[0]); 
-								$action_done++;
-								$needed_players--;
-							}
-						}
-					}
-				}
-			}
-      
-			if (($action_done == 0) && ($self->{ba_last_swap} == 0) && ($self->{ba_map_rounds} >= 7) && ($self->{ba_player_switch} == 0)) # frags balancing (last swap 3 rounds before)
-			{
-				if ($ct_wins < 2)
-				{
-					if ($ct_count < $ts_count)     # one player less we dont need swap just bring one over
-					{
-						my $ts_found = 0;
-						@ts_players = sort { $b->[6] <=> $a->[6]} @ts_players;  # best player
-						foreach my $entry (@ts_players) 
-						{
-							if ($ts_found == 0)
-							{
-								if (@{$entry}[7] == 1)  # only dead players!!
-								{
-									if (($self->{switch_admins} == 1) || (($self->{switch_admins} == 0) && ($self->is_admin(@{$entry}[1]) == 0)))  {
-										$self->{ba_last_swap} = 3;
-										$self->switch_player(@{$entry}[9], @{$entry}[0]); 
-										$ts_found++;
-									}
-								}
-							}
-						}
-					}
-					else                  # need to swap to players
-					{
-						my $ts_playerid = 0;
-						my $ts_name     = "";
-						my $ts_kills    = 0;
-						my $ts_deaths   = 0;
-						my $ct_playerid = 0;
-						my $ct_name     = "";
-						my $ct_kills    = 0;
-						my $ct_deaths   = 0;
-						my $ts_found = 0;
-						@ts_players = sort { $b->[6] <=> $a->[6]} @ts_players;  # best player
-						foreach my $entry (@ts_players) 
-						{
-							if ($ts_found == 0)
-							{
-								if (@{$entry}[7] == 1)  # only dead players!!
-								{
-									if (($self->{switch_admins} == 1) || (($self->{switch_admins} == 0) && ($self->is_admin(@{$entry}[1]) == 0)))  {
-										$ts_playerid = @{$entry}[8];
-										$ts_name     = @{$entry}[0];
-										$ts_found++;
-									}
-								}
-							}
-						}
-
-						my $ct_found = 0;
-						@ct_players = sort { $a->[6] <=> $b->[6]} @ct_players;  # worst player
-						foreach my $entry (@ct_players) 
-						{
-							if ($ct_found == 0)
-							{
-								if (@{$entry}[7] == 1)  # only dead players!!
-								{
-									if (($self->{switch_admins} == 1) || (($self->{switch_admins} == 0) && ($self->is_admin(@{$entry}[1]) == 0)))  {
-										$ct_playerid = @{$entry}[8];
-										$ct_name     = @{$entry}[0];
-										$ct_found++;
-									}
-								}
-							}
-						}
-						if (($ts_found>0) && ($ct_found>0))
-						{
-							$self->{ba_last_swap} = 3;
-							$self->switch_player($ts_playerid, $ts_name); 
-							$self->switch_player($ct_playerid, $ct_name); 
-						}
-					}
-				}
-				elsif ($ts_wins < 2)
-				{
-					if ($ts_count < $ct_count)     # one player less we dont need swap just bring one over
-					{
-						my $ct_found = 0;
-						@ct_players = sort { $b->[6] <=> $a->[6]} @ct_players;  # best player
-						foreach my $entry (@ct_players) 
-						{
-							if ($ct_found == 0)
-							{
-								if (@{$entry}[7] == 1)  # only dead players!!
-								{
-									if (($self->{switch_admins} == 1) || (($self->{switch_admins} == 0) && ($self->is_admin(@{$entry}[1]) == 0)))  {
-										$self->{ba_last_swap} = 3;
-										$self->switch_player(@{$entry}[8], @{$entry}[0]); 
-										$ct_found++;
-									}
-								}
-							}
-						}
-					}
-					else                  # need to swap to players
-					{
-						my $ts_playerid  = 0;
-						my $ts_name      = "";
-						my $ct_playerid  = 0;
-						my $ct_name      = "";             
-						my $ct_found = 0;
-						@ct_players = sort { $b->[6] <=> $a->[6]} @ct_players;  # best player
-						foreach my $entry (@ct_players) 
-						{
-							if ($ct_found == 0)
-							{
-								if (@{$entry}[7] == 1)  # only dead players!!
-								{
-									if (($self->{switch_admins} == 1) || (($self->{switch_admins} == 0) && ($self->is_admin(@{$entry}[1]) == 0)))  {
-										$ct_playerid = @{$entry}[8];
-										$ct_name     = @{$entry}[0];
-										$ct_found++;
-									}
-								}
-							}
-						}
-
-						my $ts_found = 0;
-						@ts_players = sort { $a->[6] <=> $b->[6]} @ts_players;  # worst player
-						foreach my $entry (@ts_players) 
-						{
-							if ($ts_found == 0)
-							{
-								if (@{$entry}[7] == 1)  # only dead players!!
-								{
-									if (($self->{switch_admins} == 1) || (($self->{switch_admins} == 0) && ($self->is_admin(@{$entry}[1]) == 0)))  {
-										$ts_playerid = @{$entry}[8];
-										$ts_name     = @{$entry}[0];
-										$ts_found++;
-									}
-								}
-							}
-						}
-						if (($ts_found > 0) && ($ct_found > 0))
-						{
-							$self->{ba_last_swap} = 3;
-							$self->switch_player($ts_playerid, $ts_name); 
-							$self->switch_player($ct_playerid, $ct_name); 
-						}
-					}
-				}
-			}
-		} # end if rounds > 1  
 	}
+	@ct_players = sort { $b->[6] <=> $a->[6]} @ct_players;
+	@ts_players = sort { $b->[6] <=> $a->[6]} @ts_players;
+
+	&::printEvent("TEAM", "Checking Teams", 1);
+
+	$self->debug_message("HLstatsX:CE - ATB: CT ($ct_count) $ct_kills:$ct_deaths  [$ct_wins - $ts_wins] $ts_kills:$ts_deaths ($ts_count) TS");
+
+	$self->messageAll("HLstatsX:CE - ATB - Checking Teams", 0, 1);
+
+	my $action_done = 0;
+	if ($self->{ba_last_swap} > 0) {
+		$self->{ba_last_swap}--;
+	}
+
+	# Balance based on team count.
+	# If smaller team is also losing, give them best enemy player(s). Otherwise just give them worst player(s) to even counts.
+	my $needed_players = 0;
+	my @possible_players = ();
+	my $count_as_skill_balance = 0;
+
+	if ($ct_count + 1 < $ts_count) {
+		$needed_players = floor( ($ts_count - $ct_count) / 2);
+		if ($ct_wins <= $self->{balance_max_wins}) {
+			@possible_players = sort { $b->[6] <=> $a->[6]} @ts_players;  # best player
+			$count_as_skill_balance = 1;
+		} else {
+			@possible_players = sort { $a->[6] <=> $b->[6]} @ts_players;  # worst player
+		}
+	} elsif ($ts_count + 1 < $ct_count) {
+		$needed_players = floor( ($ct_count - $ts_count) / 2);
+		if ($ts_wins <= $self->{balance_max_wins}) {
+			@possible_players = sort { $b->[6] <=> $a->[6]} @ct_players;  # best player
+			$count_as_skill_balance = 1;
+		} else {
+			@possible_players = sort { $a->[6] <=> $b->[6]} @ct_players;  # worst player
+		}
+	}
+
+	foreach my $entry (@possible_players) {
+		if ($needed_players == 0) {
+			last;
+		}
+
+		if ((@{$entry}[7] == 0 && $self->{balance_switch_only_dead}) || ($self->is_admin(@{$entry}[1]) == 1 && !$self->{switch_admins})) {
+			next;
+		}
+
+		if (!$action_done) {
+			select(undef, undef, undef, 4.5);
+		}
+		$self->messageAll("HLstatsX:CE - ATB - Player [" . @{$entry}[3] . "] " . @{$entry}[0] . " was switched to ensure an even team count.", 0, 1);
+		$self->switch_player(@{$entry}[8], @{$entry}[0]);
+		$action_done++;
+		$needed_players--;
+	}
+
+	if ($action_done) {
+		if ($count_as_skill_balance) {
+			$self->{ba_last_swap} = $self->{balance_rounds_delay};
+		}
+		return;
+	}
+	# End of balance based on team count.
+
+	# Balance based on frags.
+	if ($self->{ba_last_swap} > 0 || $self->{map_rounds} < $self->{balance_start_rounds}) {
+		return;
+	}
+
+	my $need_ct = 0;
+	my $need_ts = 0;
+	if ($ct_wins <= $self->{balance_max_wins}) {
+		$need_ct = $ct_count < $ts_count ? 0 : 1;
+		$need_ts = 1;
+
+		@ts_players = sort { $b->[6] <=> $a->[6]} @ts_players;  # best player
+		shift(@ts_players); # remove first best
+		@ct_players = sort { $a->[6] <=> $b->[6]} @ct_players;  # worst player
+	} elsif ($ts_wins <= $self->{balance_max_wins}) {
+		$need_ct = 1;
+		$need_ts = $ts_count < $ct_count ? 0 : 1;
+
+		@ts_players = sort { $a->[6] <=> $b->[6]} @ts_players;  # worst player
+		@ct_players = sort { $b->[6] <=> $a->[6]} @ct_players;  # best player
+		shift(@ct_players); # remove first best
+	}
+
+	my @ct_switch_player = ();
+	my @ts_switch_player = ();
+
+	foreach my $entry (@ct_players) {
+		if ((@{$entry}[7] == 0 && $self->{balance_switch_only_dead}) || ($self->is_admin(@{$entry}[1]) == 1 && !$self->{switch_admins})) {
+			next;
+		}
+
+		@ct_switch_player = @{$entry};
+		last;
+	}
+
+	foreach my $entry (@ts_players) {
+		if ((@{$entry}[7] == 0 && $self->{balance_switch_only_dead}) || ($self->is_admin(@{$entry}[1]) == 1 && !$self->{switch_admins})) {
+			next;
+		}
+
+		@ts_switch_player = @{$entry};
+		last;
+	}
+
+	select(undef, undef, undef, 4.5);
+	if ($need_ct && @ct_switch_player && $need_ts && @ts_switch_player) {
+		$self->messageAll("HLstatsX:CE - ATB - Switching players [CT] " . @ct_switch_player[0] . " ⇆ [T] " . @ts_switch_player[0] . " to balance teams.", 0, 1);
+		$self->switch_player(@ct_switch_player[8], @ct_switch_player[0]);
+		$self->switch_player(@ts_switch_player[8], @ts_switch_player[0]);
+	} elsif ($need_ct && @ct_switch_player && !$need_ts) {
+		$self->messageAll("HLstatsX:CE - ATB - Player [CT] " . @ct_switch_player[0] . " was switched to balance teams.", 0, 1);
+		$self->switch_player(@ct_switch_player[8], @ct_switch_player[0]);
+	} elsif ($need_ts && @ts_switch_player && !$need_ct) {
+		$self->messageAll("HLstatsX:CE - ATB - Player [T] " . @ts_switch_player[0] . " was switched to balance teams.", 0, 1);
+		$self->switch_player(@ts_switch_player[8], @ts_switch_player[0]);
+	} else {
+		# No players found or needed to switch.
+		return;
+	}
+
+	$self->{ba_last_swap} = $self->{balance_rounds_delay};
+
+	# End of balance based on frags.
 }
 
 #
@@ -1264,7 +1239,7 @@ sub update_server_loc
 		my $geoCity = undef;
 
 		try { $geoCity = $::g_gi->city( ip => $server_ip ); }
-		catch { $geoCity = undef; }
+		catch { $geoCity = undef; };
 
 		if ($geoCity) {
 

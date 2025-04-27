@@ -21,16 +21,14 @@
  */
 
 #pragma semicolon 1
- 
-#define REQUIRE_EXTENSIONS 
+
 #include <sourcemod>
 #include <sdktools>
 #include <loghelper>
-#undef REQUIRE_EXTENSIONS
 #include <cstrike>
 #include <clientprefs>
  
-#define VERSION "1.6.19"
+#define VERSION "1.11.4"
 #define HLXTAG "HLstatsX:CE"
 
 enum GameType {
@@ -119,6 +117,7 @@ new bool:g_bTeamPlay;
 new bool:g_bLateLoad = false;
 new bool:g_bIgnoreNextTagChange = false;
 new Handle:g_hCustomTags;
+new Handle:fade_msg;
 
 #define SVTAGSIZE 128
 
@@ -165,6 +164,7 @@ public OnPluginStart()
 	RegServerCmd("hlx_sm_hint",          hlx_sm_hint);
 	RegServerCmd("hlx_sm_browse",        hlx_sm_browse);
 	RegServerCmd("hlx_sm_swap",          hlx_sm_swap);
+	RegAdminCmd("sm_swap", sm_swap, ADMFLAG_BAN, "sm_swap <#userid>");
 	RegServerCmd("hlx_sm_redirect",      hlx_sm_redirect);
 	RegServerCmd("hlx_sm_player_action", hlx_sm_player_action);
 	RegServerCmd("hlx_sm_team_action",   hlx_sm_team_action);
@@ -271,6 +271,7 @@ public HLXSettingsMenu(client, CookieMenuAction:action, any:info, String:buffer[
 
 public OnMapStart()
 {
+	PrecacheSound("common/warning.wav");
 	GetTeams(gamemod == Game_INSMOD);
 
 	if (g_bTrackColors4Chat)
@@ -851,14 +852,14 @@ color_team_entities(String:message[192])
 			{
 				if (ColorSlotArray[2] > -1)
 				{
-					if (ReplaceString(message, sizeof(message), "TERRORIST ", "\x03TERRORIST\x01 ") > 0)
+					if (ReplaceString(message, sizeof(message), "TERRORIST ", "\x03Terrorists\x01 ") > 0)
 					{
 						return ColorSlotArray[2];
 					}
 				}
 				if (ColorSlotArray[3] > -1)
 				{
-					if (ReplaceString(message, sizeof(message), "CT ", "\x03CT\x01 ") > 0)
+					if (ReplaceString(message, sizeof(message), "CT ", "\x03​Counter-Terrorists\x01 ") > 0)
 					{
 						return ColorSlotArray[3];
 					}
@@ -1668,6 +1669,73 @@ public Action:hlx_sm_swap(args)
 }
 
 
+public Action sm_swap(int admin, int args)
+{
+    if (args < 1)
+    {
+        ReplyToCommand(admin, "Usage: sm_swap <userid/name> - swaps players to the opposite team (CSS only)");
+        return Plugin_Handled;
+    }
+
+    if (gamemod != Game_CSS)
+    {
+        ReplyToCommand(admin, "sm_swap is not supported by this game.");
+        return Plugin_Handled;
+    }
+
+    decl String:input[32];
+    GetCmdArg(1, input, sizeof(input));
+
+    new target_client = -1;
+    new matches = 0;
+
+    // Attempt to match by user ID
+    new user_id = StringToInt(input);
+    if (user_id > 0)
+    {
+        target_client = GetClientOfUserId(user_id);
+        if (target_client > 0 && IsClientInGame(target_client))
+        {
+            swap_player(target_client);
+            ReplyToCommand(admin, "[HLstatsX] Successfully swapped player with ID.");
+            return Plugin_Handled;
+        }
+    }
+
+    // If not found by ID, search by partial name
+    for (new i = 1; i <= MaxClients; i++)
+    {
+        if (IsClientInGame(i) && !IsFakeClient(i))
+        {
+            decl String:client_name[64];
+            GetClientName(i, client_name, sizeof(client_name));
+
+            if (StrContains(client_name, input, false) != -1)
+            {
+                target_client = i;
+                matches++;
+            }
+        }
+    }
+
+    if (matches == 1)
+    {
+        swap_player(target_client);
+        ReplyToCommand(admin, "[HLstatsX] Successfully swapped player by name.");
+    }
+    else if (matches > 1)
+    {
+        ReplyToCommand(admin, "[HLstatsX] Multiple players match that name. Please be more specific.");
+    }
+    else
+    {
+        ReplyToCommand(admin, "No matching players found.");
+    }
+
+    return Plugin_Handled;
+}
+
+
 public Action:hlx_sm_redirect(args)
 {
 	if (args < 3)
@@ -1915,7 +1983,7 @@ public Action: HLstatsX_Event_PlyTeamChange(Handle:event, const String:name[], b
 
 	return Plugin_Continue;
 }
-						
+
 
 
 swap_player(player_index)
@@ -1926,6 +1994,18 @@ swap_player(player_index)
 		{
 			case CS_TEAM_CT:
 			{
+				fade_msg = StartMessageOne("Fade", player_index);
+				BfWriteShort(fade_msg, 500);
+				BfWriteShort(fade_msg, 0); //duration
+				BfWriteShort(fade_msg, 0x0001); //type
+				BfWriteByte(fade_msg, 255); //red
+				BfWriteByte(fade_msg, 0); //green
+				BfWriteByte(fade_msg, 0); //blue
+				BfWriteByte(fade_msg, 255); //alpha
+				EndMessage();
+				EmitSoundToClient(player_index, "common/warning.wav");
+				PrintCenterText(player_index, "[HlstatsX] You were switched to balance team! You are now T.");
+
 				if (IsPlayerAlive(player_index))
 				{
 					CS_SwitchTeam(player_index, CS_TEAM_T);
@@ -1940,6 +2020,18 @@ swap_player(player_index)
 			}
 			case CS_TEAM_T:
 			{
+				fade_msg = StartMessageOne("Fade", player_index);
+				BfWriteShort(fade_msg, 500);
+				BfWriteShort(fade_msg, 0); //duration
+				BfWriteShort(fade_msg, 0x0001); //type
+				BfWriteByte(fade_msg, 0); //red
+				BfWriteByte(fade_msg, 0); //green
+				BfWriteByte(fade_msg, 255); //blue
+				BfWriteByte(fade_msg, 255); //alpha
+				EndMessage();
+
+				EmitSoundToClient(player_index, "common/warning.wav");
+				PrintCenterText(player_index, "[HlstatsX] You were switched to balance team! You are now CT.");
 				if (IsPlayerAlive(player_index))
 				{
 					CS_SwitchTeam(player_index, CS_TEAM_CT);
@@ -1949,12 +2041,7 @@ swap_player(player_index)
 					new weapon_entity = GetPlayerWeaponSlot(player_index, 4);
 					if (weapon_entity > 0)
 					{
-						decl String: class_name[32];
-						GetEdictClassname(weapon_entity, class_name, sizeof(class_name));
-						if (strcmp(class_name, "weapon_c4") == 0)
-						{
-							RemovePlayerItem(player_index, weapon_entity);
-						}
+						CS_DropWeapon( player_index, weapon_entity, true, true );
 					}
 				}
 				else

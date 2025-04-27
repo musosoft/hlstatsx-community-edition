@@ -1,0 +1,13 @@
+ErrorDocument 403 /temporary403.html
+
+<ifModule mod_rewrite.c>
+    RewriteEngine On
+
+    # Rewrite specific query strings to a static page
+    RewriteCond %{QUERY_STRING} ^mode=playerinfo&player=(\d+)&maps_sort=(.*)$ [NC]
+    RewriteRule ^hlstats.php$ /cached/playerinfo_%1.html [L]
+
+    # Catch-all to redirect complex queries
+    RewriteCond %{QUERY_STRING} .+
+    RewriteRule ^hlstats.php$ /cached/default.html [L]
+</ifModule>

@@ -453,6 +453,69 @@ sub getVisiblePlayers
   return ($max_players);
 }
 
+sub getMaxRounds
+{
+  my ($self) = @_;
+  my $status = $self->execute("mp_maxrounds");
+  
+  my @lines = split(/[\r\n]+/, $status);
+  
+
+  my $mp_maxrounds = 0;
+  foreach my $line (@lines)
+  {
+   # "mp_maxrounds" = "0"
+   #       - max number of rounds to play before server changes maps
+    if ($line =~ /^\s*"mp_maxrounds"\s*=\s*"([-0-9]+)".*$/x)
+    {
+      $mp_maxrounds   = $1;
+    }
+  }
+  return ($mp_maxrounds);
+}
+
+sub getTimeLimit
+{
+  my ($self) = @_;
+  my $status = $self->execute("mp_timelimit");
+  
+  my @lines = split(/[\r\n]+/, $status);
+  
+
+  my $mp_timelimit = 0;
+  foreach my $line (@lines)
+  {
+   # "mp_timelimit" = "0"
+   #       - game time per map in minutes
+    if ($line =~ /^\s*"mp_timelimit"\s*=\s*"([-0-9]+)".*$/x)
+    {
+      $mp_timelimit   = $1;
+    }
+  }
+  return ($mp_timelimit);
+}
+
+sub getHalfTime
+{
+  my ($self) = @_;
+  my $status = $self->execute("mp_halftime");
+  
+  my @lines = split(/[\r\n]+/, $status);
+  
+
+  my $mp_halftime = 0;
+  foreach my $line (@lines)
+  {
+   # "mp_halftime" = "0"
+   #       - Determines whether the match switches sides in a halftime event.
+    if ($line =~ /^\s*"mp_halftime"\s*=\s*"([-0-9]+)".*$/x)
+    {
+      $mp_halftime   = $1;
+    }
+  }
+  return ($mp_halftime);
+}
+
 my %l4d_difficulties = (
 	'Easy'       => 1,
 	'Normal'     => 2,

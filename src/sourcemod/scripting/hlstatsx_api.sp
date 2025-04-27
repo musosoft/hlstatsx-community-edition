@@ -10,7 +10,7 @@
 #define REQUIRE_EXTENSIONS
 #define REQUIRE_PLUGIN
 
-#define PLUGIN_VERSION "1.7.0"
+#define PLUGIN_VERSION "1.11.4"
 
 int g_iRequestId = 0;
 ArrayList g_hRequestCallbacks;
