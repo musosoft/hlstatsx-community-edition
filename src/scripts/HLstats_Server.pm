@@ -965,6 +965,7 @@ sub analyze_teams
 			$count_as_skill_balance = 1;
 		} else {
 			@possible_players = sort { $a->[6] <=> $b->[6]} @ts_players;  # worst player
+			shift(@possible_players);  # remove absolutely worst
 		}
 	} elsif ($ts_count + 1 < $ct_count) {
 		$needed_players = floor( ($ct_count - $ts_count) / 2);
@@ -973,6 +974,7 @@ sub analyze_teams
 			$count_as_skill_balance = 1;
 		} else {
 			@possible_players = sort { $a->[6] <=> $b->[6]} @ct_players;  # worst player
+			shift(@possible_players); # remove absolutely worst
 		}
 	}
 
