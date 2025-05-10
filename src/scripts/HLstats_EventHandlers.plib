@@ -953,6 +953,17 @@ sub doEvent_TeamSelection
 			$player->set("team", $team);
 			$desc = "(IGNORED) BOT: ";
 		} else {
+			if ($player->{atb_balanced_time} > 0 && $team ne $player->{atb_target_team}) {
+				my $target_team = $player->{atb_target_team};
+				$g_servers{$s_addr}->dorcon("changeteam $player->{userid} $target_team");
+				$g_servers{$s_addr}->dorcon("say $player->{userid} You were moved back to $target_team - don't abuse teambalance.");
+				$player->set("atb_balanced_time", 0);
+				$player->set("atb_target_team", "");
+
+				return $desc . $playerstr . " attempted to abuse teambalance, forced back to \"$target_team\"";
+			}
+			$player->set("atb_balanced_time", 0);
+			$player->set("atb_target_team", "");
 			$old_team = $player->{team};
 			if (($old_team eq "CT") || ($old_team eq "TERRORIST"))
 			{

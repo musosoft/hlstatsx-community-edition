@@ -130,6 +130,8 @@ sub new
 	$self->{deaths_in_a_row}   = 0;
 	$self->{trackable}         = 0;
 	$self->{needsupdate}       = 0;
+	$self->{atb_balanced_time} = 0;
+	$self->{atb_target_team} = "";
 	
 	
 	# Set Property Values

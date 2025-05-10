@@ -991,6 +991,19 @@ sub analyze_teams
 			select(undef, undef, undef, 4.5);
 		}
 		$self->messageAll("HLstatsX:CE - ATB - Player [" . @{$entry}[3] . "] " . @{$entry}[0] . " was switched to ensure an even team count.", 0, 1);
+
+		my $player_obj = $self->{srv_players}{@{$entry}[1]};
+		my $target_team = "";
+		if (@{$entry}[3] eq "TERRORIST" && $ct_count < $ts_count) {
+			   $target_team = "CT";
+		} elsif (@{$entry}[3] eq "CT" && $ts_count < $ct_count) {
+			   $target_team = "TERRORIST";
+		}
+		if ($player_obj && $target_team ne "") {
+			   $player_obj->set("atb_balanced_time", time());
+			   $player_obj->set("atb_target_team", $target_team);
+		}
+
 		$self->switch_player(@{$entry}[8], @{$entry}[0]);
 		$action_done++;
 		$needed_players--;
@@ -1051,13 +1064,41 @@ sub analyze_teams
 	select(undef, undef, undef, 4.5);
 	if ($need_ct && @ct_switch_player && $need_ts && @ts_switch_player) {
 		$self->messageAll("HLstatsX:CE - ATB - Switching players [CT] " . @ct_switch_player[0] . " ⇆ [T] " . @ts_switch_player[0] . " to balance teams.", 0, 1);
+
+		my $player_obj_ct = $self->{srv_players}{@ct_switch_player[1]};
+		if ($player_obj_ct) {
+		    $player_obj_ct->set("atb_balanced_time", time());
+		    $player_obj_ct->set("atb_target_team", "TERRORIST");
+		}
+
 		$self->switch_player(@ct_switch_player[8], @ct_switch_player[0]);
+
+		my $player_obj_ts = $self->{srv_players}{@ts_switch_player[1]};
+		if ($player_obj_ts) {
+		    $player_obj_ts->set("atb_balanced_time", time());
+		    $player_obj_ts->set("atb_target_team", "CT");
+		}
+
 		$self->switch_player(@ts_switch_player[8], @ts_switch_player[0]);
 	} elsif ($need_ct && @ct_switch_player && !$need_ts) {
 		$self->messageAll("HLstatsX:CE - ATB - Player [CT] " . @ct_switch_player[0] . " was switched to balance teams.", 0, 1);
+
+		my $player_obj_ct = $self->{srv_players}{@ct_switch_player[1]};
+		if ($player_obj_ct) {
+		    $player_obj_ct->set("atb_balanced_time", time());
+		    $player_obj_ct->set("atb_target_team", "TERRORIST");
+		}
+
 		$self->switch_player(@ct_switch_player[8], @ct_switch_player[0]);
 	} elsif ($need_ts && @ts_switch_player && !$need_ct) {
 		$self->messageAll("HLstatsX:CE - ATB - Player [T] " . @ts_switch_player[0] . " was switched to balance teams.", 0, 1);
+
+		my $player_obj_ts = $self->{srv_players}{@ts_switch_player[1]};
+		if ($player_obj_ts) {
+		    $player_obj_ts->set("atb_balanced_time", time());
+		    $player_obj_ts->set("atb_target_team", "CT");
+		}
+
 		$self->switch_player(@ts_switch_player[8], @ts_switch_player[0]);
 	} else {
 		# No players found or needed to switch.
