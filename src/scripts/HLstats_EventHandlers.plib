@@ -955,8 +955,8 @@ sub doEvent_TeamSelection
 		} else {
 			if ($player->{atb_balanced_time} > 0 && $team ne $player->{atb_target_team}) {
 				my $target_team = $player->{atb_target_team};
-				$g_servers{$s_addr}->dorcon("changeteam $player->{userid} $target_team");
-				$g_servers{$s_addr}->dorcon("say $player->{userid} You were moved back to $target_team - don't abuse teambalance.");
+				$g_servers{$s_addr}->dorcon($g_servers{$s_addr}->{swap_command}." ".$g_servers{$s_addr}->format_userid($player->{userid})." ".$target_team);
+				$g_servers{$s_addr}->dorcon($g_servers{$s_addr}->{global_chat_command}." ".$g_servers{$s_addr}->format_userid($player->{userid})." ".$g_servers{$s_addr}->quoteparam("You were moved back to $target_team - don't abuse teambalance."));
 				$player->set("atb_balanced_time", 0);
 				$player->set("atb_target_team", "");
 
