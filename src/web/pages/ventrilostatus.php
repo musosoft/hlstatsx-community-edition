@@ -197,11 +197,11 @@ class CVentriloStatus
 	
 	var	$m_channelcount;		// Number of channels as specified by the server.
 	var	$m_channelfields;		// Channel field names.
-	var	$m_channellist;			// Array of CVentriloChannel's.
+	var	$m_channellist = [];	// Array of CVentriloChannel's.
 	
 	var	$m_clientcount;			// Number of clients as specified by the server.
 	var	$m_clientfields;		// Client field names.
-	var $m_clientlist;			// Array of CVentriloClient's.
+	var $m_clientlist = []; 	// Array of CVentriloClient's.
 	
 	function Parse( $str )
 	{
@@ -785,7 +785,8 @@ class VentRequestPacket extends VentPacket
 		$this->len = $this->totlen;
 		$this->totpck = 1;
 		$this->pck = 0;
-		$this->crc = Vent::getCRC( $this->rawdata );
+/*		$this->crc = Vent::getCRC( $this->rawdata );  */
+		$this->crc = (new Vent)->getCRC( $this->rawdata );
 		$this->encodeData();						// $this->data & datakey set here.
 		$this->encodeHeader();						// $this->header & headkey set here. 
 

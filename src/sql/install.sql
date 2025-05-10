@@ -2,8 +2,8 @@
 
 -- This file is only needed for new installations.
 
-SET @DBVERSION="89";
-SET @VERSION="1.11.4";
+SET @DBVERSION="90";
+SET @VERSION="1.11.5";
 
 -- --------------------------------------------------------
 
@@ -1688,8 +1688,8 @@ INSERT INTO `hlstats_Awards` (`awardType`, `game`, `code`, `name`, `verb`) VALUE
 ('W', 'valve', '9mmhandgun', 'Glock', 'kills with 9mmhandgun'),
 ('W', 'valve', 'crossbow', 'Crossbow Sniper', 'kills with crossbow'),
 ('W', 'valve', 'crowbar', 'Crowbar Maniac', 'murders with crowbar'),
-('W', 'valve', 'gluon gun', 'Gauss King', 'kills with gluon gun'),
-('W', 'valve', 'tau_cannon', 'Egon', 'kills with tau_cannon'),
+('W', 'valve', 'gluon gun', 'Egon King', 'kills with gluon gun'),
+('W', 'valve', 'tau_cannon', 'Gauss King', 'kills with tau_cannon'),
 ('W', 'valve', 'grenade', 'Grenadier', 'kills with grenade'),
 ('W', 'valve', 'hornet', 'Hornet Master', 'kills with hornet'),
 ('W', 'valve', 'rpg_rocket', 'Rocketeer', 'kills with rocket'),
@@ -7849,8 +7849,8 @@ INSERT INTO `hlstats_Weapons` (`game`, `code`, `name`, `modifier`) VALUES
 ('valve', 'bolt', 'Crossbow Bolt', 1.70),
 ('valve', 'crossbow', 'Crossbow', 1.40),
 ('valve', 'crowbar', 'Crowbar', 1.90),
-('valve', 'tau_cannon', 'Egon Tau Cannon / Rail Gun', 1.00),
-('valve', 'gluon gun', 'Gluon / Gauss Gun', 1.00),
+('valve', 'tau_cannon', 'Tau Cannon / Rail Gun', 1.00),
+('valve', 'gluon gun', 'Egon / Gluon Gun', 1.00),
 ('valve', 'grenade', 'Grenade', 1.00),
 ('valve', 'hornet', 'Hornet', 1.30),
 ('valve', 'rpg_rocket', 'Rocket Propelled Grenade', 1.00),

@@ -1504,8 +1504,9 @@ sub doEvent_Frag
 			}
 			$killer->updateDB();
 			$victim->increment("map_deaths");
-			# $victim->set("is_dead", "1");
-			if ($weapon ne "zombie_claws_of_death") {
+			if ($weapon eq "zombie_claws_of_death") {
+				$victim->set("is_dead", "0");
+			} else {
 				$victim->set("is_dead", "1");
 			}
 			if ($victim->{auto_type} eq "kill") {
@@ -2050,7 +2051,7 @@ sub doEvent_TeamAction
 		}
 	}
 	if ($g_servers{$s_addr}->{round_status} == 0) {
-		if (($action eq "SFUI_Notice_CTs_Win") || ($action eq "CTs_Win") || ($action eq "Bomb_Defused")) {
+		if (($action eq "SFUI_Notice_CTs_Win") || ($action eq "CTs_Win") || ($action eq "SFUI_Notice_Bomb_Defused") || ($action eq "Bomb_Defused")) {
 			$g_servers{$s_addr}->increment("round_status");
 			$g_servers{$s_addr}->increment("ct_wins");
 			$g_servers{$s_addr}->increment("map_ct_wins");
@@ -2058,7 +2059,7 @@ sub doEvent_TeamAction
 			if (($action eq "SFUI_Notice_Bomb_Defused") || ($action eq "Bomb_Defused")) {
 				$g_servers{$s_addr}->increment("bombs_defused");
 			}  
-		} elsif (($action eq "SFUI_Notice_Terrorists_Win") || ($action eq "Terrorists_Win") || ($action eq "Target_Bombed")) {
+		} elsif (($action eq "SFUI_Notice_Terrorists_Win") || ($action eq "Terrorists_Win") || ($action eq "SFUI_Notice_Target_Bombed") || ($action eq "Target_Bombed")) {
 			$g_servers{$s_addr}->increment("round_status");
 			$g_servers{$s_addr}->increment("ts_wins");
 			$g_servers{$s_addr}->increment("map_ts_wins");

@@ -64,10 +64,7 @@
 		$color = hex2rgb(valid_request($_GET['color'], false));
 	}
 
-	if (isset($_GET['player'])) {
-		$player = (int)$_GET['player'];
-	}
-
+	$player = valid_request(intval($_GET['player'] ?? ''), true);
 	if (!$player) {
 		exit();
 	}
@@ -97,9 +94,13 @@
 	$cache_image = IMAGE_PATH . "/progress/trend_{$player}_{$last_time}.png";
 	if (file_exists($cache_image))
 	{
-		header('Content-type: image/png');
-		readfile($cache_image);
-		exit();
+		$file_timestamp = @filemtime($cache_image);
+		if ($file_timestamp + IMAGE_UPDATE_INTERVAL > time()) {
+			header('Content-type: image/png');
+			// header("Cache-Control: public, s-maxage=" . IMAGE_UPDATE_INTERVAL . ", max-age=" . IMAGE_UPDATE_INTERVAL); // Cache it in the browser
+			readfile($cache_image);
+			exit();
+		}
 	}
 	
 	$Chart = new pChart(380, 200);
@@ -157,7 +158,9 @@
 			0, 0, 0, 0, 0, 0, $color['red'], $color['green'], $color['blue'], FALSE);
 	}
 	
-	$cache_image = IMAGE_PATH . "/progress/trend_{$player}_{$last_time}.png";
 	$Chart->Render($cache_image);
-	header("Location: $cache_image");
+	// header("Location: $cache_image");
+	header('Content-type: image/png');
+	// header("Cache-Control: public, s-maxage=" . IMAGE_UPDATE_INTERVAL . ", max-age=" . IMAGE_UPDATE_INTERVAL); // Cache it in the browser
+	readfile($cache_image);
 ?>
