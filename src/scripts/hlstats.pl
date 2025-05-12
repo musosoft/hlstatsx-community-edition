@@ -1152,6 +1152,20 @@ sub getPlayerInfo
 				$name = "BOT-".$name;
 			}
 		}
+		# Uncomment this to consider HLTV as a bot
+		# elsif ($g_servers{$s_addr}->{play_game} == CSTRIKE()
+		# 		|| $g_servers{$s_addr}->{play_game} == TFC()
+		# 		|| $g_servers{$s_addr}->{play_game} == DOD()
+		# 		|| $g_servers{$s_addr}->{play_game} == NS()
+		# 		|| $g_servers{$s_addr}->{play_game} == VALVE()) {
+		# 	# For hlds - HLTV should be considered a bot
+		# 	# L 05/09/2025 - 17:41:44: "HLTV Proxy<5><HLTV><>" connected, address "10.5.0.4:27020"
+		# 	# L 05/09/2025 - 17:41:46: "HLTV Proxy<5><HLTV><>" entered the game
+		# 	# L 05/09/2025 - 17:41:46: "HLTV Proxy<5><HLTV><>" joined team "SPECTATOR"
+		# 	if ($uniqueid eq "HLTV") {
+		# 		$uniqueid = 'BOT';
+		# 	}
+		# }
 
 		if ($ipAddr eq "none") {
 			$ipAddr = "";
@@ -3695,6 +3709,9 @@ EOT
 			if($g_servers{$server}->{"srv_players"})
 			{
 				my %players_temp=%{$g_servers{$server}->{"srv_players"}};
+				my %status_players=$g_servers{$server}->rcon_getplayers();
+				# use Data::Dumper;
+				# print Dumper(\%status_players);
 				while ( my($pl, $player) = each(%players_temp) ) {
 					my $timeout = 250; # 250;
 					if ($g_mode eq "LAN")  {
@@ -3710,8 +3727,14 @@ EOT
 						# we delete any player who is inactive for over $timeout sec
 						# - they probably disconnected silently somehow.
 						if (($player->{is_bot} == 0) || ($g_stdin)) {
-							&printEvent(400, "Auto-disconnecting " . $player->getInfoString() ." for idling (" . ($ev_daemontime - $player->{timestamp}) . " sec) on server (".$server.")");
-							removePlayer($server, $userid, $uniqueid);
+							if (defined($status_players{$uniqueid})) {
+								# Don't remove player who exists in server 'status'
+								&printNotice("Not auto-disconnecting " . $player->getInfoString() . " because player exists in server status");
+							}else {
+								# Remove player who does not exists in server 'status'
+								&printEvent(400, "Auto-disconnecting " . $player->getInfoString() ." for idling (" . ($ev_daemontime - $player->{timestamp}) . " sec) on server (".$server.")");
+								removePlayer($server, $userid, $uniqueid);
+							}
 						}
 					}
 				}
