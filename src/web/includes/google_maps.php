@@ -41,29 +41,35 @@ function printMap($type = 'main')
 	global $db, $game, $g_options, $clandata, $clan;
 	
 	if ($type == 'main') {
-		echo ('<script src="http://maps.google.com/maps/api/js?callback=Function.prototype&key=' . GOOGLE_MAPS_API_KEY . '" type="text/javascript"></script>');
+		// Use async loading and a callback function
+		echo ('<script src="https://maps.googleapis.com/maps/api/js?key=' . GOOGLE_MAPS_API_KEY . '&loading=async&callback=initMap&libraries=marker" defer></script>');
 	}
 ?> 
 		<script type="text/javascript">
 		/* <![CDATA[ */
-		//Add the preloads here...so that they don't get load
-		//after the graphs load
+		
+		// Global map variable
+		var map; 
+		var point_icon = "<?php echo IMAGE_PATH; ?>/mm_20_blue.png";
+		var point_icon_red = "<?php echo IMAGE_PATH; ?>/mm_20_red.png";
+		var shadow_icon = "<?php echo IMAGE_PATH; ?>/mm_20_shadow.png"; // Assuming shadow exists
+
+		// Preload images (can be kept if needed elsewhere, but not strictly necessary for map markers now)
 		function preloadImages() {
 			var d=document; if(d.images){ if(!d.p) d.p=new Array();
 			var i,j=d.p.length,a=preloadImages.arguments; for(i=0; i<a.length; i++)
 			if (a[i].indexOf("#")!=0){ d.p[j]=new Image; d.p[j++].src=a[i];}}
 		}
+		<?php echo "preloadImages(point_icon, ".(($type == 'main')?"point_icon_red, ":'')."shadow_icon);"; ?>
 
-		<?php echo "preloadImages('".IMAGE_PATH."/mm_20_blue.png', ".(($type == 'main')?"'".IMAGE_PATH."/mm_20_red.png', ":'')."'".IMAGE_PATH."/mm_20_shadow.png');"; ?>
-
-
-			var point_icon = "<?php echo IMAGE_PATH; ?>/mm_20_blue.png";
-			var point_icon_red = "<?php echo IMAGE_PATH; ?>/mm_20_red.png";
+		// Map initialization function (callback)
+		async function initMap() {
+			// Import necessary libraries after API loads
+			const { Map } = await google.maps.importLibrary("maps");
+  			const { AdvancedMarkerElement } = await google.maps.importLibrary("marker"); // Import marker library here if not in script tag
 
 <?php
-		if ($type == 'main') {
-		}
-			// this create mapLatLng
+			// this create mapLatLng and mapZoom
 			printMapCenter(($type == 'clan' && $clandata['mapregion'] != '') ? $clandata['mapregion'] : $g_options['google_map_region']);
 			// this creates mapType
 			printMapType($g_options['google_map_type']);
@@ -76,35 +82,51 @@ function printMap($type = 'main')
 				mapTypeControl: true,
 				mapTypeControlOptions: {style: google.maps.MapTypeControlStyle.DROPDOWN_MENU},
 				navigationControl: true,
-				navigationControlOptions: {style: google.maps.NavigationControlStyle.ZOOM_PAN}
+				navigationControlOptions: {style: google.maps.NavigationControlStyle.ZOOM_PAN},
+				mapId: 'HLSTATS_MAP' // Recommended for Advanced Markers
 			};
 
-			var map = new google.maps.Map(document.getElementById("map"), myOptions);
+			map = new Map(document.getElementById("map"), myOptions); // Use imported Map
 
-
-
+			// --- Marker Creation Functions (Updated) ---
 			function createMarker(point, city, country, player_info) {
 				var html_text = '<table class="gmapstab"><tr><td colspan="2" class="gmapstabtitle" style="border-bottom:1px solid black;">'+city+', '+country+'</td></tr>';
 				for ( i=0; i<player_info.length; i++) {
-					html_text += '<tr><td><a href="hlstats.php?mode=playerinfo&amp;player='+player_info[i][0]+'">'+player_info[i][1]+'</a></td></tr>';
+					html_text += '<tr><td><a href="hlstats.php?mode=playerinfo&player='+player_info[i][0]+'">'+player_info[i][1]+'</a></td></tr>';
 					html_text += '<tr><td>Kills/Deaths</td><td>'+player_info[i][2]+':'+player_info[i][3]+'</td></tr>';
 <?php
 					if ($type == 'main') {
 						echo "html_text += '<tr><td>Time</td><td>'+player_info[i][4]+'</td></tr>';";
-					} 
+					}
 ?>
 				}
 				html_text += '</table>';
-				var infowindow = new google.maps.InfoWindow({
-					content: html_text
-				})
-				var marker = new google.maps.Marker({
-					position: point, 
-					map: map,
-					icon: point_icon
+				
+				const infowindow = new google.maps.InfoWindow({
+					content: html_text,
+					ariaLabel: city + ', ' + country // Accessibility improvement
 				});
 
-				google.maps.event.addListener(marker, "click", function() {infowindow.open(map, marker);});
+				// Create DOM element for the marker icon
+				const markerIcon = document.createElement('img');
+				markerIcon.src = point_icon;
+				markerIcon.style.cursor = 'pointer'; // Indicate it's clickable
+				markerIcon.title = city + ', ' + country; // Tooltip on hover
+
+				const marker = new AdvancedMarkerElement({ // Use AdvancedMarkerElement
+					position: point,
+					map: map,
+					content: markerIcon, // Set the DOM element as content
+					title: city + ', ' + country // Redundant with icon title, but good practice
+				});
+
+				// Add listener to the icon element, not the marker itself
+				markerIcon.addEventListener("click", () => {
+					infowindow.open({
+						anchor: marker, // Anchor InfoWindow to the marker
+						map: map
+					});
+				});
 			}
 
 <?php
@@ -113,34 +135,48 @@ function printMap($type = 'main')
 			function createMarkerS(point, servers, city, country, kills) {
 				var html_text =   '<table class="gmapstab"><tr><td colspan="2" class="gmapstabtitle" style="border-bottom:1px solid black;">'+city+', '+country+'</td></tr>';
 				for ( i=0; i<servers.length; i++) {
-					html_text += '<tr><td><a href=\"hlstats.php?mode=servers&server_id=' + servers[i][0] + '&amp;game=<?php echo $game; ?>\">' + servers[i][2] + '</a></td></tr>';
+					html_text += '<tr><td><a href=\"hlstats.php?mode=servers&server_id=' + servers[i][0] + '&game=<?php echo $game; ?>\">' + servers[i][2] + '</a></td></tr>';
 					html_text += '<tr><td>' + servers[i][1] + ' (<a href=\"steam://connect/' + servers[i][1] + '\">connect</a>)</td></tr>';
 				}
 				html_text += '<tr><td>'+kills+' kills</td></tr></table>';
-				var infowindow = new google.maps.InfoWindow({
-					content: html_text
-				})
-				var marker = new google.maps.Marker({
-					position: point, 
-					map: map,
-					icon: point_icon_red
+				
+				const infowindow = new google.maps.InfoWindow({
+					content: html_text,
+					ariaLabel: city + ', ' + country // Accessibility improvement
 				});
 
-				google.maps.event.addListener(marker, "click", function() {infowindow.open(map, marker);});
+				// Create DOM element for the marker icon
+				const markerIcon = document.createElement('img');
+				markerIcon.src = point_icon_red;
+				markerIcon.style.cursor = 'pointer'; // Indicate it's clickable
+				markerIcon.title = city + ', ' + country + ' (' + kills + ' kills)'; // Tooltip on hover
+
+				const marker = new AdvancedMarkerElement({ // Use AdvancedMarkerElement
+					position: point,
+					map: map,
+					content: markerIcon, // Set the DOM element as content
+					title: city + ', ' + country // Redundant with icon title, but good practice
+				});
+
+				// Add listener to the icon element, not the marker itself
+				markerIcon.addEventListener("click", () => {
+					infowindow.open({
+						anchor: marker, // Anchor InfoWindow to the marker
+						map: map
+					});
+				});
 			}
 	<?php
-
+			// --- Data Fetching and Marker Placement ---
 				$db->query("SELECT serverId, IF(publicaddress != '', publicaddress, CONCAT(address, ':', port)) AS addr, name, kills, lat, lng, city, country FROM hlstats_Servers WHERE game='$game' AND lat IS NOT NULL AND lng IS NOT NULL");
 
 				$servers = array();
 				while ($row = $db->fetch_array())
 				{
-					//Skip this part, if we already have the location info (should be the same)
 					if (!isset($servers[$row['lat'] . ',' . $row['lng']]))
 					{
 						$servers[$row['lat'] . ',' . $row['lng']] = array('lat' => $row['lat'], 'lng' => $row['lng'], 'addr' => $row['addr'], 'city' => $row['city'], 'country' => $row['country']);
 					}
-
 					$servers[$row['lat'] . ',' . $row['lng']]['servers'][] = array('serverId' => $row['serverId'], 'addr' => $row['addr'], 'name' => $row['name'], 'kills' => $row['kills']);
 				}
 				foreach ($servers as $map_location)
@@ -158,6 +194,7 @@ function printMap($type = 'main')
 						$servers_js[] = $temp;
 						$kills += $server['kills'];
 					}
+					// Call marker function inside initMap
 					echo 'createMarkerS(new google.maps.LatLng(' . $map_location['lat'] . ', ' . $map_location['lng'] . '), [' . implode(',', $servers_js) . '], "' . htmlspecialchars(urldecode($map_location['city']), ENT_QUOTES) . '", "' . htmlspecialchars(urldecode($map_location['country']), ENT_QUOTES) . '", ' . $kills . ");\n";
 				}
 
@@ -177,7 +214,6 @@ function printMap($type = 'main')
 				$players = array();
 				while ($row = $db->fetch_array())
 				{
-					//Skip this part, if we already have the location info (should be the same)
 					if (!isset($players[$row['cli_lat'] . ',' . $row['cli_lng']]))
 					{
 						$players[$row['cli_lat'] . ',' . $row['cli_lng']] = array('cli_lat' => $row['cli_lat'], 'cli_lng' => $row['cli_lng'], 'cli_city' => $row['cli_city'], 'cli_country' => $row['cli_country']);
@@ -185,7 +221,6 @@ function printMap($type = 'main')
 					$search_pattern = array("/[^A-Za-z0-9\[\]*.,=()!\"$%&^`ґ':;ЯІі#+~_\-|<>\/@{}дцьДЦЬ ]/");
 					$replace_pattern = array("");
 					$row['name'] = preg_replace($search_pattern, $replace_pattern, $row['name']);
-
 					$players[$row['cli_lat'] . ',' . $row['cli_lng']]['players'][] = array('playerId' => $row['player_id'], 'name' => $row['name'], 'kills' => $row['kills'], 'deaths' => $row['deaths'], 'connected' => $row['connected']);
 				}
 
@@ -200,7 +235,6 @@ function printMap($type = 'main')
 						$min = sprintf("%02d", floor(($stamp % 3600) / 60));
 						$sec = sprintf("%02d", floor($stamp % 60));
 						$time_str = $hours . ":" . $min . ":" . $sec;
-
 						$temp = "[" . $player['playerId'] . ',';
 						$temp .= "'" . htmlspecialchars(urldecode(preg_replace($search_pattern, $replace_pattern, $player['name'])), ENT_QUOTES) . "',";
 						$temp .= $player['kills'] . ',';
@@ -208,54 +242,31 @@ function printMap($type = 'main')
 						$temp .= "'" . $time_str . "']";
 						$players_js[] = $temp;
 					}
-
+					// Call marker function inside initMap
 					echo "createMarker(new google.maps.LatLng(" . $map_location['cli_lat'] . ", " . $map_location['cli_lng'] . "), \"" . htmlspecialchars(urldecode($map_location['cli_city']), ENT_QUOTES) . "\", \"" . htmlspecialchars(urldecode($map_location['cli_country']), ENT_QUOTES) . '", [' . implode(',', $players_js) . "]);\n";
 				}
 			} else if ($type == 'clan') {
 				$db->query("
 					SELECT
-						playerId,
-						lastName,
-						country,
-						skill,
-						kills,
-						deaths,
-						lat,
-						lng,
-						city,
-						country
-					FROM
-						hlstats_Players
-					WHERE
-						clan=$clan
-						AND hlstats_Players.hideranking = 0
-					GROUP BY
-						hlstats_Players.playerId
+						playerId, lastName, country, skill, kills, deaths, lat, lng, city, country
+					FROM hlstats_Players
+					WHERE clan=$clan AND hlstats_Players.hideranking = 0
+					GROUP BY hlstats_Players.playerId
 				");
 				$players = array();
 				while ( $row = $db->fetch_array() )
 				{
-					//Skip this part, if we already have the location info (should be the same)
 					if ( !isset($players[ $row['lat'] . ',' . $row['lng'] ]) )
 					{
 						$players[ $row['lat'] . ',' . $row['lng'] ] = array(
-							'lat' => $row['lat'],
-							'lng' => $row['lng'],
-							'city' => $row['city'],
-							'country' => $row['country']
+							'lat' => $row['lat'], 'lng' => $row['lng'], 'city' => $row['city'], 'country' => $row['country']
 						);
 					}
 					$search_pattern = array("/[^A-Za-z0-9\[\]*.,=()!\"$%&^`ґ':;ЯІі#+~_\-|<>\/@{}дцьДЦЬ ]/");
 					$replace_pattern = array("");
 					$row['lastName'] = preg_replace($search_pattern, $replace_pattern, $row['lastName']);
-					
 					$players[ $row['lat'] . ',' . $row['lng'] ]['players'][] = array(
-						'playerId' => $row['playerId'],
-						'name' => $row['lastName'],
-						'kills' => $row['kills'],
-						'deaths' => $row['deaths'],
-                        // Where should this information come from??
-						//'connected' => $row['connected']
+						'playerId' => $row['playerId'], 'name' => $row['lastName'], 'kills' => $row['kills'], 'deaths' => $row['deaths']
 					);
 				}
 				
@@ -271,11 +282,13 @@ function printMap($type = 'main')
 						$temp .= $player['deaths'] . ']';
 						$players_js[] = $temp;
 					}
-					
+					// Call marker function inside initMap
 					echo "createMarker(new google.maps.LatLng(" . $location['lat'] . ", " . $location['lng'] . "), \"" . htmlspecialchars(urldecode($location['city']), ENT_QUOTES) . "\", \"" . htmlspecialchars(urldecode($location['country']), ENT_QUOTES) . "\", [" . implode(",", $players_js) . "]);\n";
 				}
 			}
 ?>
+		} // End of initMap function
+
 		/* ]]> */
 	</script>
 <?php
@@ -411,7 +424,7 @@ function printMapType($maptype)
 			echo 'var mapType = google.maps.MapTypeId.TERRAIN;';
 			break;
 		default:
-			break;
+			break; // Keep default or set to ROADMAP?
 	}
 	echo "\n";
 }
