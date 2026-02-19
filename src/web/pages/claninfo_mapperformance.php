@@ -139,15 +139,20 @@ For support and installation notes visit http://www.hlxcommunity.com
 	");
 
 	$result = $db->query("
-		SELECT *, 
-			IFNULL(kills/deaths, '-') AS kpd,
-			IFNULL(headshots / kills, '-') AS hpk,
-			ROUND(kills / $realkills * 100, 2) AS kpercent,
-			ROUND(headshots / $realheadshots * 100, 2) AS hpercent
+		SELECT
+			tmp_clan_kills.map AS map,
+			tmp_clan_kills.kills AS kills,
+			tmp_clan_deaths.deaths AS deaths,
+			tmp_clan_kills.headshots AS headshots,
+			IFNULL(tmp_clan_kills.kills / tmp_clan_deaths.deaths, '-') AS kpd,
+			IFNULL(tmp_clan_kills.headshots / tmp_clan_kills.kills, '-') AS hpk,
+			ROUND(tmp_clan_kills.kills / $realkills * 100, 2) AS kpercent,
+			ROUND(tmp_clan_kills.headshots / $realheadshots * 100, 2) AS hpercent
 		FROM
-			tmp_clan_kills, tmp_clan_deaths
-		WHERE
-			tmp_clan_kills.map = tmp_clan_deaths.map
+			tmp_clan_kills
+		INNER JOIN
+			tmp_clan_deaths
+			ON tmp_clan_kills.map = tmp_clan_deaths.map
 		ORDER BY
 			$tblMaps->sort $tblMaps->sortorder,
 			$tblMaps->sort2 $tblMaps->sortorder
