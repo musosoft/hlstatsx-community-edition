@@ -801,33 +801,58 @@ sub flushDB
 	}
 	
 	if ($::g_stdin == 0 && $self->{userid} > 0) {
-		# Update live stats
+		# Upsert live stats so rows are recreated after DB restarts (MEMORY table is volatile).
 		my $query = "
-			UPDATE
+			INSERT INTO
 				hlstats_Livestats
-			SET
-				cli_address=?,
-				steam_id=?,
-				name=?,
-				team=?,
-				kills=?,
-				deaths=?,
-				suicides=?,
-				headshots=?,
-				shots=?,
-				hits=?,
-				is_dead=?,
-				has_bomb=?,
-				ping=?,
-				connected=?,
-				skill_change=?,
-				skill=?
-			WHERE
-				player_id=?
-		";
-		my @vals = ($address, $steamid, $name, 
+				(
+					player_id,
+					server_id,
+					cli_address,
+					steam_id,
+					name,
+					team,
+					kills,
+					deaths,
+					suicides,
+					headshots,
+					shots,
+					hits,
+					is_dead,
+					has_bomb,
+					ping,
+					connected,
+					skill_change,
+					skill,
+					cli_flag
+				)
+			VALUES
+				(
+					?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?
+				)
+			ON DUPLICATE KEY UPDATE
+				server_id=VALUES(server_id),
+				cli_address=VALUES(cli_address),
+				steam_id=VALUES(steam_id),
+				name=VALUES(name),
+				team=VALUES(team),
+				kills=VALUES(kills),
+				deaths=VALUES(deaths),
+				suicides=VALUES(suicides),
+				headshots=VALUES(headshots),
+				shots=VALUES(shots),
+				hits=VALUES(hits),
+				is_dead=VALUES(is_dead),
+				has_bomb=VALUES(has_bomb),
+				ping=VALUES(ping),
+				connected=VALUES(connected),
+				skill_change=VALUES(skill_change),
+				skill=VALUES(skill),
+				cli_flag=VALUES(cli_flag)
+			";
+		my @vals = ($playerid, $self->{server_id}, $address, $steamid, $name,
 			$team, $map_kills, $map_deaths, $map_suicides, $map_headshots, $map_shots, 
-			$map_hits, $is_dead, $has_bomb, $ping, $connected, $skill_change, $skill, $playerid);
+			$map_hits, $is_dead, $has_bomb, $ping, $connected, $skill_change, $skill, $self->{flag});
 		&::execCached("player_flushdb_livestats", $query, @vals);
 	}
 
