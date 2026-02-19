@@ -79,6 +79,7 @@ echo '127.0.0.1 phpmyadmin.example.com' | sudo tee -a /etc/hosts
 
 - [install.sql](./src/sql/install.sql) is mounted in `mysql` container which automatically installs the DB only on the first time. If you prefer not to mount `install.sql`, you may manually install the DB by logging into PHPMyAdmin and importing the `install.sql` there.
 - `traefik` serves HTTPS with a self-signed cert. All HTTP requests are redirected to HTTPS.
+- The compose DB service pins MySQL SQL mode to `NO_ENGINE_SUBSTITUTION` for compatibility with legacy HLX queries after updater runs.
 
 ### Dockge (recommended for production stacks)
 

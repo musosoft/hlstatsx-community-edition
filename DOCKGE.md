@@ -44,3 +44,4 @@ For each additional game server/stats instance:
 - Keep secrets only in `.env`.
 - Put HTTP/HTTPS behind reverse proxy + WAF/CDN if internet-facing.
 - Restrict daemon UDP ingest by source IP in firewall rules.
+- Keep the DB `command` SQL mode in the template (`NO_ENGINE_SUBSTITUTION`) to avoid legacy HLX query failures on strict MySQL defaults.

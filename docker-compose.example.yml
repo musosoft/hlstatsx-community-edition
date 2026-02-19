@@ -119,6 +119,8 @@ services:
   # 4. HLStatsX:CE DB
   db:
     image: mysql:${MYSQL_IMAGE_TAG:-5.7}
+    command:
+      - --sql-mode=NO_ENGINE_SUBSTITUTION
     environment:
       - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:-root}
       - MYSQL_USER=${MYSQL_USER:-hlstatsxce}
