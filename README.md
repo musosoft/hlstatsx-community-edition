@@ -65,6 +65,9 @@ docker run --rm -it -p 27500:27500/udp startersclan/hlstatsx-community-edition:1
 To deploy using Docker Compose:
 
 ```sh
+cp .env.example .env
+# optional: edit .env values
+
 docker-compose -f docker-compose.example.yml up
 # `web` is available at http://localhost:8081 or https://web.example.com
 # `phpmyadmin` is available at http://localhost:8083 or https://phpmyadmin.example.com
@@ -76,6 +79,28 @@ echo '127.0.0.1 phpmyadmin.example.com' | sudo tee -a /etc/hosts
 
 - [install.sql](./src/sql/install.sql) is mounted in `mysql` container which automatically installs the DB only on the first time. If you prefer not to mount `install.sql`, you may manually install the DB by logging into PHPMyAdmin and importing the `install.sql` there.
 - `traefik` serves HTTPS with a self-signed cert. All HTTP requests are redirected to HTTPS.
+
+### Dockge (recommended for production stacks)
+
+Use the reusable stack template files:
+
+- [compose.dockge.example.yaml](./compose.dockge.example.yaml)
+- [.env.example](./.env.example)
+- [DOCKGE.md](./DOCKGE.md)
+
+Quick start:
+
+```sh
+# from your Dockge stack directory
+cp /path/to/hlstatsx-community-edition/compose.dockge.example.yaml ./compose.yaml
+cp /path/to/hlstatsx-community-edition/.env.example ./.env
+
+# then edit .env:
+# - credentials
+# - ports
+# - DB_VOLUME_NAME
+# - HLX_SOURCE_DIR (absolute path to repo clone)
+```
 
 ### Upgrading (docker)
 

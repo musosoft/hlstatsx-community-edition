@@ -1,0 +1,79 @@
+# Copy this file to your Dockge stack as `compose.yaml`.
+# Then copy `.env.example` to `.env` and adjust values.
+
+services:
+  db:
+    image: mysql:8.0
+    restart: unless-stopped
+    command: --default-authentication-plugin=mysql_native_password
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 20s
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-hlstatsxce}
+      MYSQL_USER: ${MYSQL_USER:-hlstatsxce}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-hlstatsxce}
+    volumes:
+      - db-data:/var/lib/mysql
+      - ${HLX_SOURCE_DIR:-.}/src/sql/install.sql:/docker-entrypoint-initdb.d/01-install.sql:ro
+
+  daemon:
+    build:
+      context: ${HLX_SOURCE_DIR:-.}
+      dockerfile: Dockerfile.daemon
+      target: prod
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    command:
+      - --ip=0.0.0.0
+      - --port=${HLX_UDP_PORT:-27500}
+      - --db-host=db:3306
+      - --db-name=${HLX_DB_NAME:-hlstatsxce}
+      - --db-username=${HLX_DB_USER:-hlstatsxce}
+      - --db-password=${HLX_DB_PASS:-hlstatsxce}
+      - --nodns-resolveip
+    ports:
+      - ${HLX_UDP_PORT:-27500}:${HLX_UDP_PORT:-27500}/udp
+
+  web:
+    build:
+      context: ${HLX_SOURCE_DIR:-.}
+      dockerfile: Dockerfile.web
+      target: prod
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DB_ADDR: db
+      DB_NAME: ${HLX_DB_NAME:-hlstatsxce}
+      DB_USER: ${HLX_DB_USER:-hlstatsxce}
+      DB_PASS: ${HLX_DB_PASS:-hlstatsxce}
+      DB_DEBUG: "0"
+      XDEBUG_MODE: off
+    ports:
+      - 127.0.0.1:${HLX_WEB_PORT:-8081}:80
+
+  phpmyadmin:
+    image: phpmyadmin:5.2
+    restart: unless-stopped
+    depends_on:
+      - db
+    environment:
+      PMA_HOST: db
+    profiles:
+      - tools
+    ports:
+      - 127.0.0.1:${HLX_PMA_PORT:-8083}:80
+
+volumes:
+  db-data:
+    name: ${DB_VOLUME_NAME:-hlstatsx_db-volume}

@@ -1678,9 +1678,13 @@ sub readDatabaseConfig()
 		if ($g_debug > 1) {
 			print "Config parameter '$p' = '$v'\n";
 		}
+		next if (!defined($directives_mysql{$p}) || $directives_mysql{$p} eq "");
 		$tmp = "\$".$directives_mysql{$p}." = '$v'";
 		#print " -> setting ".$tmp."\n";
 		eval $tmp;
+		if ($@) {
+			&printEvent("CONFIG", "Ignoring invalid option '$p' from database", 1);
+		}
 	}
 	$gsettings->finish;
 	# setting defaults

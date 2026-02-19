@@ -3,6 +3,8 @@
 /.vscode/*
 !/.vscode/launch.json
 /.vagrant
+/.env*
+!/.env.example
 
 /src/amxmodx/scripting/include
 /src/amxmodx/scripting/amxxpc

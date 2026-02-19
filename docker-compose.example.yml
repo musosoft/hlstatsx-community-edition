@@ -18,7 +18,7 @@ services:
       - -c
       - |
           set -eu
-          exec hlds_linux -console -noipx -secure -game cstrike +map de_dust2 +maxplayers 32 +sv_lan 0 +ip 0.0.0.0 +port 27015 +rcon_password password +log on +logaddress_add 10.5.0.50 27500
+          exec hlds_linux -console -noipx -secure -game cstrike +map de_dust2 +maxplayers 32 +sv_lan 0 +ip 0.0.0.0 +port 27015 +rcon_password password +log on +logaddress_add 10.5.0.50 ${HLX_UDP_PORT:-27500}
 
   # Uncomment to test CS2     
   # 1. Counter-Strike 2 gameserver sends HTTP logs to source-udp-forwarder
@@ -65,9 +65,9 @@ services:
   # 3. HLStatsX:CE perl daemon accepts the gameserver logs. Gameserver Logs are parsed and stats are recorded
   # The daemon's proxy_key secret can only be setup in the HLStatsX:CE Web Admin Panel Settings under 'Proxy Settings' section
   daemon:
-    image: startersclan/hlstatsx-community-edition:1.11.6-daemon
+    image: ${HLX_IMAGE_REPO:-startersclan/hlstatsx-community-edition}:${HLX_IMAGE_TAG:-1.11.6}-daemon
     ports:
-      - 27500:27500/udp   # For external servers to send logs to the daemon
+      - ${HLX_UDP_PORT:-27500}:${HLX_UDP_PORT:-27500}/udp   # For external servers to send logs to the daemon
     networks:
       default:
         ipv4_address: 10.5.0.50  # Static IP
@@ -75,11 +75,11 @@ services:
       - db
     command:
       - --ip=0.0.0.0
-      - --port=27500
+      - --port=${HLX_UDP_PORT:-27500}
       - --db-host=db:3306
-      - --db-name=hlstatsxce
-      - --db-username=hlstatsxce
-      - --db-password=hlstatsxce
+      - --db-name=${HLX_DB_NAME:-hlstatsxce}
+      - --db-username=${HLX_DB_USER:-hlstatsxce}
+      - --db-password=${HLX_DB_PASS:-hlstatsxce}
       - --nodns-resolveip
       - --debug
       # - --debug
@@ -87,7 +87,7 @@ services:
 
   # Cron - awards
   awards:
-    image: startersclan/hlstatsx-community-edition:1.11.6-daemon
+    image: ${HLX_IMAGE_REPO:-startersclan/hlstatsx-community-edition}:${HLX_IMAGE_TAG:-1.11.6}-daemon
     stop_signal: SIGKILL
     entrypoint:
       - /bin/sh
@@ -101,7 +101,7 @@ services:
           #!/bin/sh
           set -eu
           cd /scripts
-          perl hlstats-awards.pl --db-host=db:3306 --db-name=hlstatsxce --db-username=hlstatsxce --db-password=hlstatsxce #--help
+          perl hlstats-awards.pl --db-host=db:3306 --db-name=${HLX_DB_NAME:-hlstatsxce} --db-username=${HLX_DB_USER:-hlstatsxce} --db-password=${HLX_DB_PASS:-hlstatsxce} #--help
           EOF
           chmod +x /awards.sh
 
@@ -118,12 +118,12 @@ services:
 
   # 4. HLStatsX:CE DB
   db:
-    image: mysql:5.7
+    image: mysql:${MYSQL_IMAGE_TAG:-5.7}
     environment:
-      - MYSQL_ROOT_PASSWORD=root    # Username 'root', password 'root'
-      - MYSQL_USER=hlstatsxce
-      - MYSQL_PASSWORD=hlstatsxce
-      - MYSQL_DATABASE=hlstatsxce
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:-root}
+      - MYSQL_USER=${MYSQL_USER:-hlstatsxce}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD:-hlstatsxce}
+      - MYSQL_DATABASE=${MYSQL_DATABASE:-hlstatsxce}
     volumes:
       - db-volume:/var/lib/mysql
       - ./src/sql/install.sql:/docker-entrypoint-initdb.d/install.sql:ro  # This seeds the DB only on the first time
@@ -134,31 +134,31 @@ services:
   # Available at http://localhost:8081, or https://web.example.com
   # Admin Panel username: admin, password: 123456
   web:
-    image: startersclan/hlstatsx-community-edition:1.11.6-web
+    image: ${HLX_IMAGE_REPO:-startersclan/hlstatsx-community-edition}:${HLX_IMAGE_TAG:-1.11.6}-web
     labels:
       - "traefik.enable=true"
-      - "traefik.docker.network=hlstatsx-community-edition_traefik-network"
+      - "traefik.docker.network=${COMPOSE_PROJECT_NAME:-hlstatsx-community-edition}_traefik-network"
       # traefik v2
       # http
-      - "traefik.http.routers.${COMPOSE_PROJECT_NAME?err}-web-http.entrypoints=web"
-      - "traefik.http.routers.${COMPOSE_PROJECT_NAME?err}-web-http.rule=Host(`web.example.com`)"
-      - "traefik.http.routers.${COMPOSE_PROJECT_NAME?err}-web-http.middlewares=hlstatsx-community-edition-web-http-myRedirectScheme" # Redirect http to https
-      - "traefik.http.middlewares.${COMPOSE_PROJECT_NAME?err}-web-http-myRedirectScheme.redirectScheme.scheme=https" # Redirect http to https
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME:-hlstatsx-community-edition}-web-http.entrypoints=web"
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME:-hlstatsx-community-edition}-web-http.rule=Host(`${HLX_WEB_DOMAIN:-web.example.com}`)"
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME:-hlstatsx-community-edition}-web-http.middlewares=${COMPOSE_PROJECT_NAME:-hlstatsx-community-edition}-web-http-myRedirectScheme" # Redirect http to https
+      - "traefik.http.middlewares.${COMPOSE_PROJECT_NAME:-hlstatsx-community-edition}-web-http-myRedirectScheme.redirectScheme.scheme=https" # Redirect http to https
       # https
-      - "traefik.http.routers.${COMPOSE_PROJECT_NAME?err}-web.entrypoints=websecure"
-      - "traefik.http.routers.${COMPOSE_PROJECT_NAME?err}-web.tls="
-      - "traefik.http.routers.${COMPOSE_PROJECT_NAME?err}-web.rule=Host(`web.example.com`)"
-      - "traefik.http.services.${COMPOSE_PROJECT_NAME?err}-web.loadbalancer.server.port=80"
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME:-hlstatsx-community-edition}-web.entrypoints=websecure"
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME:-hlstatsx-community-edition}-web.tls="
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME:-hlstatsx-community-edition}-web.rule=Host(`${HLX_WEB_DOMAIN:-web.example.com}`)"
+      - "traefik.http.services.${COMPOSE_PROJECT_NAME:-hlstatsx-community-edition}-web.loadbalancer.server.port=80"
     volumes:
       - games-volume:/web/hlstatsimg/games  # Stateful games volume, which also contains heatmaps
     environment:
       - DB_ADDR=db
-      - DB_NAME=hlstatsxce
-      - DB_USER=hlstatsxce
-      - DB_PASS=hlstatsxce
+      - DB_NAME=${HLX_DB_NAME:-hlstatsxce}
+      - DB_USER=${HLX_DB_USER:-hlstatsxce}
+      - DB_PASS=${HLX_DB_PASS:-hlstatsxce}
       - DB_DEBUG=0
     ports:
-      - 127.0.0.1:8081:80
+      - 127.0.0.1:${HLX_WEB_PORT:-8081}:80
       - 9000
     networks:
       - traefik-network
@@ -168,14 +168,14 @@ services:
 
   # Cron - Heatmaps
   heatmaps:
-    image: startersclan/hlstatsx-community-edition:1.11.6-web
+    image: ${HLX_IMAGE_REPO:-startersclan/hlstatsx-community-edition}:${HLX_IMAGE_TAG:-1.11.6}-web
     volumes:
       - games-volume:/web/hlstatsimg/games  # Stateful games volume, which also contains heatmaps
     environment:
       - DB_HOST=db
-      - DB_NAME=hlstatsxce
-      - DB_USER=hlstatsxce
-      - DB_PASS=hlstatsxce
+      - DB_NAME=${HLX_DB_NAME:-hlstatsxce}
+      - DB_USER=${HLX_DB_USER:-hlstatsxce}
+      - DB_PASS=${HLX_DB_PASS:-hlstatsxce}
       - HLXCE_WEB=/web
       - HUD_URL=http://www.hlxcommunity.com
       - OUTPUT_SIZE=medium
@@ -208,22 +208,22 @@ services:
     image: phpmyadmin:5.2
     labels:
       - "traefik.enable=true"
-      - "traefik.docker.network=hlstatsx-community-edition_traefik-network"
+      - "traefik.docker.network=${COMPOSE_PROJECT_NAME:-hlstatsx-community-edition}_traefik-network"
       # traefik v2
       # http
-      - "traefik.http.routers.${COMPOSE_PROJECT_NAME?err}-phpmyadmin-http.entrypoints=web"
-      - "traefik.http.routers.${COMPOSE_PROJECT_NAME?err}-phpmyadmin-http.rule=Host(`phpmyadmin.example.com`)"
-      - "traefik.http.routers.${COMPOSE_PROJECT_NAME?err}-phpmyadmin-http.middlewares=hlstatsx-community-edition-phpmyadmin-http-myRedirectScheme" # Redirect http to https
-      - "traefik.http.middlewares.${COMPOSE_PROJECT_NAME?err}-phpmyadmin-http-myRedirectScheme.redirectScheme.scheme=https" # Redirect http to https
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME:-hlstatsx-community-edition}-phpmyadmin-http.entrypoints=web"
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME:-hlstatsx-community-edition}-phpmyadmin-http.rule=Host(`${HLX_PMA_DOMAIN:-phpmyadmin.example.com}`)"
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME:-hlstatsx-community-edition}-phpmyadmin-http.middlewares=${COMPOSE_PROJECT_NAME:-hlstatsx-community-edition}-phpmyadmin-http-myRedirectScheme" # Redirect http to https
+      - "traefik.http.middlewares.${COMPOSE_PROJECT_NAME:-hlstatsx-community-edition}-phpmyadmin-http-myRedirectScheme.redirectScheme.scheme=https" # Redirect http to https
       # https
-      - "traefik.http.routers.${COMPOSE_PROJECT_NAME?err}-phpmyadmin.entrypoints=websecure"
-      - "traefik.http.routers.${COMPOSE_PROJECT_NAME?err}-phpmyadmin.tls="
-      - "traefik.http.routers.${COMPOSE_PROJECT_NAME?err}-phpmyadmin.rule=Host(`phpmyadmin.example.com`)"
-      - "traefik.http.services.${COMPOSE_PROJECT_NAME?err}-phpmyadmin.loadbalancer.server.port=80"
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME:-hlstatsx-community-edition}-phpmyadmin.entrypoints=websecure"
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME:-hlstatsx-community-edition}-phpmyadmin.tls="
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME:-hlstatsx-community-edition}-phpmyadmin.rule=Host(`${HLX_PMA_DOMAIN:-phpmyadmin.example.com}`)"
+      - "traefik.http.services.${COMPOSE_PROJECT_NAME:-hlstatsx-community-edition}-phpmyadmin.loadbalancer.server.port=80"
     environment:
       - PMA_HOST=db
     ports:
-      - 127.0.0.1:8083:80
+      - 127.0.0.1:${HLX_PMA_PORT:-8083}:80
     networks:
       - traefik-network
       - default
@@ -272,7 +272,7 @@ services:
       - --certificatesresolvers.myresolver.acme.dnschallenge=true
       - --certificatesresolvers.myresolver.acme.dnschallenge.provider=ovh
       # - --certificatesresolvers.myresolver.acme.caserver=https://acme-staging-v02.api.letsencrypt.org/directory
-      - --certificatesresolvers.myresolver.acme.email=postmaster@example.com
+      - --certificatesresolvers.myresolver.acme.email=${HLX_ACME_EMAIL:-postmaster@example.com}
       - --certificatesresolvers.myresolver.acme.storage=/letsencrypt/acme.json
 
 networks:

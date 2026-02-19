@@ -1,0 +1,46 @@
+# Dockge Deployment (Reusable Template)
+
+This repository includes a generic Dockge stack template that is safe to clone for multiple HLstatsX:CE instances.
+
+## Files
+
+- `compose.dockge.example.yaml`: stack template
+- `.env.example`: environment template
+
+## Quick start
+
+1. Clone this repository on your Docker host.
+2. Create a new stack directory in your Dockge stacks folder.
+3. Copy `compose.dockge.example.yaml` to that stack directory as `compose.yaml`.
+4. Copy `.env.example` to the same stack directory as `.env`.
+5. Update `.env` with unique values, especially:
+   - `MYSQL_ROOT_PASSWORD`
+   - `MYSQL_PASSWORD`
+   - `HLX_DB_PASS`
+   - `DB_VOLUME_NAME`
+   - `HLX_WEB_PORT`
+   - `HLX_UDP_PORT`
+   - `HLX_PMA_PORT`
+   - `HLX_SOURCE_DIR` (absolute path to this repository clone)
+6. Start stack in Dockge.
+
+## Multi-instance pattern
+
+For each additional game server/stats instance:
+
+1. Copy the stack directory to a new name.
+2. Set unique values in that stack `.env`:
+   - `DB_VOLUME_NAME`
+   - `HLX_WEB_PORT`
+   - `HLX_UDP_PORT`
+   - `HLX_PMA_PORT`
+   - DB credentials
+3. Open only the new UDP ingest port from the specific game server IP.
+4. Keep web/phpMyAdmin bindings on `127.0.0.1` and publish externally via reverse proxy.
+
+## Security notes
+
+- Do not commit `.env` files.
+- Keep secrets only in `.env`.
+- Put HTTP/HTTPS behind reverse proxy + WAF/CDN if internet-facing.
+- Restrict daemon UDP ingest by source IP in firewall rules.
