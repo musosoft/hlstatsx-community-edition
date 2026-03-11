@@ -54,6 +54,13 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    environment:
+      HLX_DB_HOST: db
+      HLX_DB_PORT: "3306"
+      HLX_DB_NAME: ${HLX_DB_NAME:-hlstatsxce}
+      HLX_DB_USER: ${HLX_DB_USER:-hlstatsxce}
+      HLX_DB_PASS: ${HLX_DB_PASS:-hlstatsxce}
+      HLX_AWARDS_MAX_LAG_DAYS: ${HLX_AWARDS_MAX_LAG_DAYS:-2}
     stop_signal: SIGKILL
     entrypoint:
       - /bin/sh
@@ -67,12 +74,38 @@ services:
           set -eu
           cd /scripts
           perl hlstats-awards.pl \
-            --db-host=db:3306 \
-            --db-name=${HLX_DB_NAME:-hlstatsxce} \
-            --db-username=${HLX_DB_USER:-hlstatsxce} \
-            --db-password=${HLX_DB_PASS:-hlstatsxce}
+            --db-host="$$HLX_DB_HOST:$$HLX_DB_PORT" \
+            --db-name="$$HLX_DB_NAME" \
+            --db-username="$$HLX_DB_USER" \
+            --db-password="$$HLX_DB_PASS"
           EOF
           chmod +x /awards.sh
+
+          cat > /healthcheck-awards.sh <<'EOF'
+          #!/bin/sh
+          set -eu
+          pgrep cron >/dev/null
+          latest_date="$$(
+            cd /scripts
+            perl -MDBI -e '
+              my $$dbh = DBI->connect(
+                "DBI:mysql:database=$$ENV{HLX_DB_NAME};host=$$ENV{HLX_DB_HOST};port=$$ENV{HLX_DB_PORT}",
+                $$ENV{HLX_DB_USER},
+                $$ENV{HLX_DB_PASS},
+                { RaiseError => 0, PrintError => 0 }
+              ) or exit 1;
+              my ($$value) = $$dbh->selectrow_array(q{SELECT value FROM hlstats_Options WHERE keyname="awards_d_date"});
+              exit 1 unless defined $$value;
+              print $$value;
+            '
+          )"
+          [ -n "$$latest_date" ]
+          latest_epoch="$$(date -u -d "$$latest_date" +%s)"
+          now_epoch="$$(date -u +%s)"
+          age_days="$$(( (now_epoch - latest_epoch) / 86400 ))"
+          [ "$$age_days" -le "$${HLX_AWARDS_MAX_LAG_DAYS:-2}" ]
+          EOF
+          chmod +x /healthcheck-awards.sh
 
           crontab - <<'EOF'
           PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
@@ -80,6 +113,14 @@ services:
           EOF
 
           exec cron -f
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - /healthcheck-awards.sh
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
 
   web:
     build:
