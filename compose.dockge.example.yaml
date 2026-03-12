@@ -69,15 +69,28 @@ services:
       - |
           set -eu
 
+          cat > /hlx-awards.env <<EOF
+          HLX_DB_HOST='$$HLX_DB_HOST'
+          HLX_DB_PORT='$$HLX_DB_PORT'
+          HLX_DB_NAME='$$HLX_DB_NAME'
+          HLX_DB_USER='$$HLX_DB_USER'
+          HLX_DB_PASS='$$HLX_DB_PASS'
+          HLX_AWARDS_CRON='${HLX_AWARDS_CRON:-0 0 * * *}'
+          HLX_AWARDS_MAX_LAG_DAYS='${HLX_AWARDS_MAX_LAG_DAYS:-2}'
+          HLX_AWARDS_GRACE_MINUTES='${HLX_AWARDS_GRACE_MINUTES:-90}'
+          EOF
+          chmod 600 /hlx-awards.env
+
           cat > /awards.sh <<'EOF'
           #!/bin/sh
           set -eu
+          . /hlx-awards.env
           cd /scripts
           perl hlstats-awards.pl \
-            --db-host="$$HLX_DB_HOST:$$HLX_DB_PORT" \
-            --db-name="$$HLX_DB_NAME" \
-            --db-username="$$HLX_DB_USER" \
-            --db-password="$$HLX_DB_PASS"
+            --db-host="$${HLX_DB_HOST}:$${HLX_DB_PORT}" \
+            --db-name="$${HLX_DB_NAME}" \
+            --db-username="$${HLX_DB_USER}" \
+            --db-password="$${HLX_DB_PASS}"
           EOF
           chmod +x /awards.sh
 
@@ -85,11 +98,12 @@ services:
           #!/bin/sh
           set -eu
           pgrep cron >/dev/null
+          . /hlx-awards.env
           latest_date="$$(
             cd /scripts
             perl -MDBI -e '
               my $$dbh = DBI->connect(
-                "DBI:mysql:database=$$ENV{HLX_DB_NAME};host=$$ENV{HLX_DB_HOST};port=$$ENV{HLX_DB_PORT}",
+                "DBI:mysql:database=" . $$ENV{HLX_DB_NAME} . ";host=" . $$ENV{HLX_DB_HOST} . ";port=" . $$ENV{HLX_DB_PORT},
                 $$ENV{HLX_DB_USER},
                 $$ENV{HLX_DB_PASS},
                 { RaiseError => 0, PrintError => 0 }
@@ -100,10 +114,30 @@ services:
             '
           )"
           [ -n "$$latest_date" ]
+          max_lag_days="$${HLX_AWARDS_MAX_LAG_DAYS:-2}"
+          grace_minutes="$${HLX_AWARDS_GRACE_MINUTES:-90}"
+          expected_date="$$(date -u -d '2 days ago' +%F)"
+          set -- $${HLX_AWARDS_CRON:-0 0 * * *}
+          if [ "$$#" -ge 2 ] && [ "$$1" -ge 0 ] 2>/dev/null && [ "$$2" -ge 0 ] 2>/dev/null; then
+            current_hour="$$(date -u +%H | sed 's/^0*//')"
+            current_minute="$$(date -u +%M | sed 's/^0*//')"
+            scheduled_hour="$$(printf '%s' "$$2" | sed 's/^0*//')"
+            scheduled_minute="$$(printf '%s' "$$1" | sed 's/^0*//')"
+            current_hour="$${current_hour:-0}"
+            current_minute="$${current_minute:-0}"
+            scheduled_hour="$${scheduled_hour:-0}"
+            scheduled_minute="$${scheduled_minute:-0}"
+            current_minutes="$$(( current_hour * 60 + current_minute ))"
+            scheduled_minutes="$$(( scheduled_hour * 60 + scheduled_minute + grace_minutes ))"
+            if [ "$$current_minutes" -ge "$$scheduled_minutes" ]; then
+              expected_date="$$(date -u -d 'yesterday' +%F)"
+            fi
+          fi
           latest_epoch="$$(date -u -d "$$latest_date" +%s)"
           now_epoch="$$(date -u +%s)"
           age_days="$$(( (now_epoch - latest_epoch) / 86400 ))"
-          [ "$$age_days" -le "$${HLX_AWARDS_MAX_LAG_DAYS:-2}" ]
+          [ "$$age_days" -le "$$max_lag_days" ]
+          [ "$$latest_date" \> "$$expected_date" ] || [ "$$latest_date" = "$$expected_date" ]
           EOF
           chmod +x /healthcheck-awards.sh
 

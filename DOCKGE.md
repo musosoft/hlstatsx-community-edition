@@ -23,6 +23,7 @@ This repository includes a generic Dockge stack template that is safe to clone f
    - `HLX_PMA_PORT`
    - `HLX_AWARDS_CRON`
    - `HLX_AWARDS_MAX_LAG_DAYS`
+   - `HLX_AWARDS_GRACE_MINUTES`
    - `HLX_SOURCE_DIR` (absolute path to this repository clone)
 6. Start stack in Dockge.
 
@@ -49,4 +50,4 @@ For each additional game server/stats instance:
 - Restrict daemon UDP ingest by source IP in firewall rules.
 - Keep the DB `command` SQL mode in the template (`NO_ENGINE_SUBSTITUTION`) to avoid legacy HLX query failures on strict MySQL defaults.
 - The `awards` service runs `hlstats-awards.pl` on `HLX_AWARDS_CRON` and is required for daily awards and ribbon maintenance.
-- The `awards` healthcheck also verifies `hlstats_Options.awards_d_date` freshness, with `HLX_AWARDS_MAX_LAG_DAYS` defaulting to `2`.
+- The `awards` healthcheck also verifies `hlstats_Options.awards_d_date` freshness, with `HLX_AWARDS_MAX_LAG_DAYS=2` as a hard cap and `HLX_AWARDS_GRACE_MINUTES=90` for the post-schedule grace window.
