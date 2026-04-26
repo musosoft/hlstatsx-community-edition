@@ -442,6 +442,7 @@ sub doEvent_Connect
 			$player->set("connect_time", time());
 			my $player_rank = 0;
 			$player_rank = $player->getRank();
+			
 			if ($min_players_rank > 0 || $player_rank == 0) {
 				if ($player_rank > $min_players_rank) {
 					my $steamid = $player->{uniqueid};
@@ -617,6 +618,31 @@ sub doEvent_EnterGame
 					$g_servers{$s_addr}->messageAll($msg, $player->{playerid}, 1);
 				}
 			}
+
+            # KD Enforcement Logic
+            my $p_steamid = $player->{plain_uniqueid};
+            if (!$p_steamid && $player->{uniqueid}) {
+                 $p_steamid = $player->{uniqueid};
+            }
+            
+            if ($p_steamid) {
+                my $p_kills = $player->{total_kills};
+                my $p_deaths = $player->{total_deaths};
+                if (!$p_deaths) { $p_deaths = 0; }
+                if (!$p_kills) { $p_kills = 0; }
+                
+                my $p_kd = 0.0;
+                if ($p_deaths > 0) {
+                    $p_kd = $p_kills / $p_deaths;
+                } else {
+                    $p_kd = $p_kills;
+                }
+                
+                my $ttl = 3600; # 1 hour TTL
+                my $cmd = sprintf("sm_kd_set \"%s\" \"%.2f\" \"%d\"", $p_steamid, $p_kd, $ttl);
+                $g_servers{$s_addr}->dorcon($cmd);
+                &::printEvent("KD PUSH", "Sent for $p_steamid (KD: $p_kd)", 0);
+            }
 		}
 		
 		if (($g_servers{$s_addr}->{ignore_bots} == 1) && ($isbot == 1))

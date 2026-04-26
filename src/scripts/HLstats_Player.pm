@@ -78,6 +78,7 @@ sub new
 	$self->{kills}             = 0;
 	$self->{total_kills}       = 0;
 	$self->{deaths}            = 0;
+    $self->{total_deaths}      = 0;
 	$self->{suicides}          = 0;
 	$self->{skill}             = 1000;
 	$self->{game}              = "";
@@ -313,7 +314,7 @@ sub setUniqueId
 		# An existing player. Get their skill rating.
 		my $query = "
 			SELECT
-				skill, kills, displayEvents, flag
+				skill, kills, deaths, displayEvents, flag
 			FROM
 				hlstats_Players
 			WHERE
@@ -321,7 +322,7 @@ sub setUniqueId
 		";
 		my $result = &::doQuery($query);
 		if ($result->rows > 0) {
-			($self->{skill}, $self->{total_kills}, $self->{display_events},$self->{flag}) = $result->fetchrow_array;
+			($self->{skill}, $self->{total_kills}, $self->{total_deaths}, $self->{display_events},$self->{flag}) = $result->fetchrow_array;
 		} else {
 			# Have record in hlstats_PlayerUniqueIds but not in hlstats_Players
 			$self->insertPlayer($tempPlayerId);
