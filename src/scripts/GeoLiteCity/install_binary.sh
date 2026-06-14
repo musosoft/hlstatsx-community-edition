@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 # HLstatsX Community Edition - Real-time player and clan rankings and statistics
 # Copyleft (L) 2008-20XX Nicholas Hastings (nshastings@gmail.com)
 # http://www.hlxcommunity.com
@@ -43,13 +44,11 @@ API_KEY="${MAXMIND_LICENSE_KEY:-${MAXMIND_API_KEY:-${1:-}}}"
 
 # ***** NOTHING TO CONFIGURE BELOW HERE *****
 
-API_URL="https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-City&license_key=$API_KEY&suffix=tar.gz"
-
 FILE=GeoLite2-City
 FILE_EXT=.tar.gz
 
 # Change to directory where installer is
-cd `dirname $0`
+cd "$(dirname "$0")"
 
 if [ -z "$API_KEY" ] || [[ $API_KEY =~ "<YOUR_API_KEY>" ]]; then
   echo "----------------------------------------------------------"
@@ -61,16 +60,28 @@ if [ -z "$API_KEY" ] || [[ $API_KEY =~ "<YOUR_API_KEY>" ]]; then
   exit 3
 fi
 
+API_URL="https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-City&license_key=$API_KEY&suffix=tar.gz"
+TMPDIR="$(mktemp -d)"
+trap 'rm -rf "$TMPDIR"' EXIT
+
 echo "[>>] Downloading GeoLite2-City database"
-wget -N -q "$API_URL" -O "$FILE$FILE_EXT"
+curl -fL -sS "$API_URL" -o "$TMPDIR/$FILE$FILE_EXT"
 
 echo "[<<] Uncompressing $FILE$FILE_EXT"
-tar -zxvf "$FILE$FILE_EXT"
+tar -zxf "$TMPDIR/$FILE$FILE_EXT" -C "$TMPDIR"
+
+MMDB_PATH="$(find "$TMPDIR" -type f -name "$FILE.mmdb" -print -quit)"
+if [ -z "$MMDB_PATH" ]; then
+  echo "[!] $FILE.mmdb was not found in the downloaded archive."
+  exit 1
+fi
+
+if [ ! -s "$MMDB_PATH" ]; then
+  echo "[!] Downloaded $FILE.mmdb is empty."
+  exit 1
+fi
 
 echo "[->] Moving $FILE.mmdb file to $PWD"
-mv ./${FILE}_*/${FILE}.mmdb ./
-rm -R ./${FILE}_*
-rm "$FILE$FILE_EXT"
+install -m 0644 "$MMDB_PATH" "./$FILE.mmdb"
 
-chmod 644 GeoLite2-City.mmdb
 echo "[✓] Done"
