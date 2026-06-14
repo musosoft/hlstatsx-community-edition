@@ -34,7 +34,12 @@
 #
 # For support and installation notes visit http://www.hlxcommunity.com
 
-API_KEY="<YOUR_API_KEY>"
+if [ -f /root/.maxmind.env ]; then
+  # shellcheck disable=SC1091
+  . /root/.maxmind.env
+fi
+
+API_KEY="${MAXMIND_LICENSE_KEY:-${MAXMIND_API_KEY:-${1:-}}}"
 
 # ***** NOTHING TO CONFIGURE BELOW HERE *****
 
@@ -46,24 +51,26 @@ FILE_EXT=.tar.gz
 # Change to directory where installer is
 cd `dirname $0`
 
-if [[ $API_KEY =~ "<YOUR_API_KEY>" ]]; then
+if [ -z "$API_KEY" ] || [[ $API_KEY =~ "<YOUR_API_KEY>" ]]; then
   echo "----------------------------------------------------------"
-  echo "[!] You probably forgot to set yours MaxMind account API key!"
+  echo "[!] You probably forgot to set your MaxMind license key."
+  echo "[i] Set MAXMIND_LICENSE_KEY in the environment, pass it as the first argument,"
+  echo "[i] or create /root/.maxmind.env with MAXMIND_LICENSE_KEY=..."
   echo "[i] Please check installation instructions > 2.4. Prepare GeoIP2 (optional) > https://github.com/NomisCZ/hlstatsx-community-edition/wiki/Installation#2-installation"
   echo "----------------------------------------------------------"
   exit 3
 fi
 
 echo "[>>] Downloading GeoLite2-City database"
-wget -N -q $API_URL -O $FILE$FILE_EXT
+wget -N -q "$API_URL" -O "$FILE$FILE_EXT"
 
 echo "[<<] Uncompressing $FILE$FILE_EXT"
-tar -zxvf $FILE$FILE_EXT
+tar -zxvf "$FILE$FILE_EXT"
 
 echo "[->] Moving $FILE.mmdb file to $PWD"
 mv ./${FILE}_*/${FILE}.mmdb ./
 rm -R ./${FILE}_*
-rm $FILE$FILE_EXT
+rm "$FILE$FILE_EXT"
 
-chmod 777 GeoLite2-City.mmdb
+chmod 644 GeoLite2-City.mmdb
 echo "[✓] Done"

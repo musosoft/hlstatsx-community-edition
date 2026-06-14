@@ -44,6 +44,8 @@ services:
       - --nodns-resolveip
     ports:
       - ${HLX_UDP_PORT:-27500}:${HLX_UDP_PORT:-27500}/udp
+    volumes:
+      - ${HLX_SOURCE_DIR:-.}/src/scripts/GeoLiteCity:/scripts/GeoLiteCity:ro
 
   awards:
     build:
@@ -155,6 +157,8 @@ services:
       timeout: 10s
       retries: 5
       start_period: 20s
+    volumes:
+      - ${HLX_SOURCE_DIR:-.}/src/scripts/GeoLiteCity:/scripts/GeoLiteCity:ro
 
   web:
     build:

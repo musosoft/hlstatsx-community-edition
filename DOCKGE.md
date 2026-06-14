@@ -51,3 +51,10 @@ For each additional game server/stats instance:
 - Keep the DB `command` SQL mode in the template (`NO_ENGINE_SUBSTITUTION`) to avoid legacy HLX query failures on strict MySQL defaults.
 - The `awards` service runs `hlstats-awards.pl` on `HLX_AWARDS_CRON` and is required for daily awards and ribbon maintenance.
 - The `awards` healthcheck also verifies `hlstats_Options.awards_d_date` freshness, with `HLX_AWARDS_MAX_LAG_DAYS=2` as a hard cap and `HLX_AWARDS_GRACE_MINUTES=90` for the post-schedule grace window.
+
+## GeoIP updates
+
+- `daemon` and `awards` mount `${HLX_SOURCE_DIR}/src/scripts/GeoLiteCity` read-only, so GeoIP database refreshes do not require rebuilding images.
+- Keep `GeoLite2-City.mmdb` and `GeoLiteCity.dat` out of git; they are ignored.
+- To refresh MaxMind GeoLite2 City, set `MAXMIND_LICENSE_KEY` in the shell, pass it as the first argument, or create a root-only `/root/.maxmind.env` containing `MAXMIND_LICENSE_KEY=...`.
+- Run `src/scripts/GeoLiteCity/install_binary.sh` from the repository or directly by path, then recreate/restart the `daemon` service so its cached GeoIP reader opens the new file.

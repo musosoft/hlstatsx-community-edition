@@ -12,3 +12,8 @@
 
 /src/web/hlstatsimg/progress
 /src/web/hlstatsimg/graph
+
+/src/scripts/GeoLiteCity/GeoLiteCity.dat
+/src/scripts/GeoLiteCity/GeoLite2-City.mmdb
+/src/scripts/GeoLiteCity/GeoLite2-City.tar.gz
+/src/scripts/GeoLiteCity/GeoLite2-City_*
