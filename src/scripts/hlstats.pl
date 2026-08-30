@@ -141,6 +141,103 @@ sub checkBonusRound
 sub is_number ($) { ( $_[0] ^ $_[0] ) eq '0' }
 
 
+# In-memory caches for resolved Steam group clantags.
+%g_clantag_cache     = ();   # groupid -> tag (positive cache)
+%g_clantag_neg_cache = ();   # groupid -> 1   (negative cache)
+
+#
+# string|undef resolveClanTag (string groupId)
+#
+# Resolves a Steam group abbreviation (clantag) for a numeric group ID by
+# calling the local web endpoint clantag.php through the installed curl
+# binary. Successful lookups are cached in %g_clantag_cache and failures in
+# %g_clantag_neg_cache so repeated log lines for the same group do not hammer
+# the endpoint or block the log-processing loop.
+#
+# Only a strictly validated numeric group ID is ever placed into the URL. The
+# curl invocation uses the multi-argument pipe form of open() which bypasses
+# the shell entirely, so no value is ever shell-interpolated.
+#
+sub resolveClanTag
+{
+	my ($groupId) = @_;
+	return undef unless defined($groupId);
+	# Strict numeric validation: only ASCII digits, no sign/space/whitespace.
+	return undef unless $groupId =~ /^[0-9]+$/;
+
+	# Positive cache hit.
+	if (exists($g_clantag_cache{$groupId})) {
+		return $g_clantag_cache{$groupId};
+	}
+	# Negative cache hit: skip repeated failures.
+	if (exists($g_clantag_neg_cache{$groupId})) {
+		return undef;
+	}
+
+	# Cloudflare web endpoint. Only the validated numeric ID is appended.
+	my $url = "https://lamateam.eu/api/steamGroup?groupid=" . $groupId;
+
+	# curl with strict timeout and response-size limits. The list form of
+	# open() bypasses the shell entirely, so nothing is shell-interpolated.
+	my @curlArgs = (
+		"curl",
+		"--silent", "--show-error", "--fail",
+		"--max-time", "5",
+		"--connect-timeout", "2",
+		"--max-filesize", "16384",
+		"-A", "HLstatsX-CE/1.x (clantag resolver)",
+		$url
+	);
+
+	my $raw = "";
+	my $ok = 0;
+	eval {
+		local $SIG{ALRM} = sub { die "alarm\n" };
+		alarm(8);
+		my $pid = open(my $cFH, "-|", @curlArgs);
+		if (defined($pid)) {
+			local $/;
+			$raw = <$cFH>;
+			$raw = "" unless defined($raw);
+			close($cFH);
+			$ok = 1;
+		}
+		alarm(0);
+	};
+	alarm(0);
+
+	if (!$ok) {
+		$raw = "";
+	}
+
+	# Extract the bounded tag field from the endpoint's JSON response.
+	if ($raw =~ /"tag"\s*:\s*"((?:\\.|[^"\\]){1,15})"/) {
+		$raw = $1;
+		$raw =~ s/\\(["\\])/$1/g;
+	} else {
+		$raw = "";
+	}
+
+	# Normalize the response: strip surrounding whitespace and newlines.
+	$raw =~ s/[\r\n\0]+$//;
+	$raw =~ s/^\s+//;
+	$raw =~ s/\s+$//;
+
+	# Validate the returned tag: non-empty, no control characters, not overlong.
+	if (length($raw) == 0 || length($raw) > 15) {
+		$g_clantag_neg_cache{$groupId} = 1;
+		return undef;
+	}
+	if ($raw =~ /[\x00-\x1F\x7F]/) {
+		$g_clantag_neg_cache{$groupId} = 1;
+		return undef;
+	}
+
+	$g_clantag_cache{$groupId} = $raw;
+	return $raw;
+}
+
+
 #
 # void printNotice (string notice)
 #
@@ -3397,6 +3494,25 @@ while ($loop = &getLine()) {
 				}
 			} else {
 				$ev_status = "(IGNORED) Rcon from \"$ev_obj_a:$ev_obj_b\": \"$ev_obj_c\"";
+			}
+		} elsif ($s_output =~ /^(?:\[(.+)\.(?:smx|amxx)\]\s*)?HLX_CLANID\s+userid=(\d+)\s+groupid=(\d+)\s*$/i) {
+			# SourceMod plugin bridge: resolve the Steam group abbreviation
+			# for the given groupid and push the clantag back to the game
+			# server via RCON using the existing quoteparam helper.
+			# An optional [plugin.smx]/[plugin.amxx] prefix is allowed around
+			# the marker, matching the SourceMod log prefix convention.
+			my $ev_clan_userid  = $2;
+			my $ev_clan_groupid = $3;
+			$ev_type = 600;
+
+			my $tag = &resolveClanTag($ev_clan_groupid);
+			if (defined($tag) && $tag ne "") {
+				$g_servers{$s_addr}->dorcon("hlx_sm_set_clantag $ev_clan_userid " . $g_servers{$s_addr}->quoteparam($tag));
+				&printEvent("CLANTAG", "Set clantag for userid $ev_clan_userid (group $ev_clan_groupid) to \"$tag\"", 1);
+				$ev_status = "Set clantag \"$tag\" for userid $ev_clan_userid";
+			} else {
+				&printEvent("CLANTAG", "Failed to resolve clantag for userid $ev_clan_userid (group $ev_clan_groupid)", 1);
+				$ev_status = "(IGNORED) Could not resolve clantag for group $ev_clan_groupid";
 			}
 		} elsif ($s_output =~ /^\[(.+)\.(smx|amxx)\]\s*(.+)$/i) {
 			# Prototype: Cmd:[SM] obj_a
