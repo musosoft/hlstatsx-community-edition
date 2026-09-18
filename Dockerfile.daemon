@@ -21,35 +21,18 @@ RUN set -eux; \
     find /scripts -type f -name 'run_*' -exec chmod 750 {} \;; \
     ls -al /scripts/*
 
-FROM perl:5.38.0-slim-buster AS dev
+FROM perl:5.38.0-slim-bookworm AS dev
 
 # Install modules
 RUN set -eux; \
     apt-get update; \
-    apt-get install -y build-essential; \
+    apt-get install -y --no-install-recommends \
+        build-essential \
+        default-libmysqlclient-dev; \
     \
     cpanm DBI; \
     \
-    # Install DBD::mysql, requires mysql 8. See: https://stackoverflow.com/q/4729722
-    apt-get update; \
-    apt-get install -y wget; \
-    # See: https://dev.mysql.com/downloads/repo/apt/
-    DEB=$( wget -qO- https://dev.mysql.com/downloads/repo/apt/ | grep -E '[(]mysql-apt-config_[0-9]+\.[0-9]+\.[0-9]+-[0-9]+_all\.deb[)]' | cut -d '(' -f2 | cut -d ')' -f1 ); \
-    # E.g. https://dev.mysql.com/get/mysql-apt-config_0.8.29-1_all.deb
-    wget -q https://dev.mysql.com/get/$DEB; \
-    DEBIAN_FRONTEND=noninteractive apt install -y ./mysql-apt-config_*; \
-    # Fix buster apt source: https://repo.mysql.com/apt/debian/dists/buster/
-    sed -i.orig 's/ mysql-8.*$/ mysql-8.0/' /etc/apt/sources.list.d/mysql.list; \
-    apt-get update; \
-    # apt-get install -y default-libmysqlclient-dev; \
-    apt-get install -y libmysqlclient-dev; \
-    apt-get install -y libmysqlclient21; \
     cpanm DBD::mysql; \
-    # apt purge --auto-remove -y mysql-community-client; \
-    # apt purge --auto-remove -y mysql-server; \
-    apt purge --auto-remove -y libmysqlclient-dev; \
-    apt purge --auto-remove -y mysql-apt-config; \
-    rm -fv ./mysql-apt-config_*; \
     \
     cpanm Geo::IP::PurePerl; \
     cpanm GeoIP2::Database::Reader; \

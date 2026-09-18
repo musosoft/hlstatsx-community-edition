@@ -63,6 +63,9 @@ jobs:
         ./test/test.sh prod 1 1
 
   build:
+    env:
+      DOCKERHUB_REGISTRY_USER: ${{ secrets.DOCKERHUB_REGISTRY_USER }}
+      DOCKERHUB_REGISTRY_PASSWORD: ${{ secrets.DOCKERHUB_REGISTRY_PASSWORD }}
     strategy:
       matrix:
         variant:
@@ -126,8 +129,11 @@ jobs:
           latest=false
 
     - name: Login to Docker Hub registry
-      # Run on master and tags
-      if: github.ref == 'refs/heads/dev' || startsWith(github.ref, 'refs/tags/')
+      # Publish only when Docker Hub credentials are configured.
+      if: >-
+        (github.ref == 'refs/heads/dev' || startsWith(github.ref, 'refs/tags/')) &&
+        env.DOCKERHUB_REGISTRY_USER != '' &&
+        env.DOCKERHUB_REGISTRY_PASSWORD != ''
       uses: docker/login-action@v3
       with:
         username: ${{ secrets.DOCKERHUB_REGISTRY_USER }}
@@ -148,8 +154,11 @@ jobs:
         cache-to: type=local,dest=/tmp/.buildx-cache-${{ matrix.variant }}-new,mode=max
 
     - name: Build and push
-      # Run on master and tags
-      if: github.ref == 'refs/heads/dev' || startsWith(github.ref, 'refs/tags/')
+      # Publish only when Docker Hub credentials are configured.
+      if: >-
+        (github.ref == 'refs/heads/dev' || startsWith(github.ref, 'refs/tags/')) &&
+        env.DOCKERHUB_REGISTRY_USER != '' &&
+        env.DOCKERHUB_REGISTRY_PASSWORD != ''
       uses: docker/build-push-action@v5
       with:
         file: Dockerfile.${{ matrix.variant }}
@@ -157,6 +166,21 @@ jobs:
         target: prod
         platforms: ${{ matrix.variant == 'daemon' && 'linux/amd64' || 'linux/386,linux/amd64,linux/arm64' }}
         push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        cache-from: type=local,src=/tmp/.buildx-cache-${{ matrix.variant }}
+        cache-to: type=local,dest=/tmp/.buildx-cache-${{ matrix.variant }}-new,mode=max
+
+    - name: Build without publishing
+      if: >-
+        (github.ref == 'refs/heads/dev' || startsWith(github.ref, 'refs/tags/')) &&
+        (env.DOCKERHUB_REGISTRY_USER == '' || env.DOCKERHUB_REGISTRY_PASSWORD == '')
+      uses: docker/build-push-action@v5
+      with:
+        file: Dockerfile.${{ matrix.variant }}
+        context: '.'
+        target: prod
+        platforms: ${{ matrix.variant == 'daemon' && 'linux/amd64' || 'linux/386,linux/amd64,linux/arm64' }}
+        push: false
         tags: ${{ steps.meta.outputs.tags }}
         cache-from: type=local,src=/tmp/.buildx-cache-${{ matrix.variant }}
         cache-to: type=local,dest=/tmp/.buildx-cache-${{ matrix.variant }}-new,mode=max
