@@ -4,6 +4,7 @@ FROM $IMAGE AS build
 # Set permissions for 'www-data' user
 # COPY --chown=www-data:www-data --chmod=640  /web /web
 COPY ./src/web /web
+COPY ./src/web/config.example.php /web/config.php
 RUN set -eux; \
     chown -R www-data:www-data /web; \
     find /web -type d -exec chmod 750 {} \; ; \
@@ -71,6 +72,7 @@ RUN set -eux; \
 
 # Add configs
 COPY ./config/web/. /
+COPY ./src/web/config.example.php /web/config.php
 # Disable the built-in php-fpm configs, since we're using our own config
 RUN set -eux; \
     mv -v /usr/local/etc/php-fpm.d/docker.conf /usr/local/etc/php-fpm.d/docker.conf.disabled; \
