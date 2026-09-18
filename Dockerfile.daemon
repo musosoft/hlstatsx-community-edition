@@ -32,7 +32,7 @@ RUN set -eux; \
     \
     cpanm DBI; \
     \
-    cpanm --notest DBD::mysql; \
+    cpanm --notest DBD::mysql@4.055; \
     \
     cpanm Geo::IP::PurePerl; \
     cpanm GeoIP2::Database::Reader; \
