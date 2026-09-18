@@ -224,10 +224,14 @@ jobs:
   update-dockerhub-description:
     needs: [test, build]
     if: github.ref == 'refs/heads/dev'
+    env:
+      DOCKERHUB_REGISTRY_USER: ${{ secrets.DOCKERHUB_REGISTRY_USER }}
+      DOCKERHUB_REGISTRY_PASSWORD: ${{ secrets.DOCKERHUB_REGISTRY_PASSWORD }}
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
     - name: Docker Hub Description
+      if: env.DOCKERHUB_REGISTRY_USER != '' && env.DOCKERHUB_REGISTRY_PASSWORD != ''
       uses: peter-evans/dockerhub-description@v4
       with:
         username: ${{ secrets.DOCKERHUB_REGISTRY_USER }}
