@@ -1423,6 +1423,7 @@ sub updatePlayerCount
 	if ($self->{play_game} == L4D()) {
 		my $num = 0;
 		while (my($pl, $player) = each(%{$self->{srv_players}})) {
+			$player->updateTrackable();
 			if ($player->{trackable} == 1) {
 				$trackable++;
 			}
@@ -1435,6 +1436,7 @@ sub updatePlayerCount
 	} else {
 		$self->{numplayers} = scalar keys %{$self->{srv_players}};
 		while (my($pl, $player) = each(%{$self->{srv_players}})) {
+			$player->updateTrackable();
 			if ($player->{trackable} == 1) {
 				$trackable++;
 			}

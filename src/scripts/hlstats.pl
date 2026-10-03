@@ -1483,8 +1483,8 @@ sub botidcheck
 sub isTrackableTeam
 {
 	my ($team) = @_;
-	#if ($team =~ /spectator/i || $team =~ /unassigned/i || $team eq "") {
-	if ($team =~ /spectator/i || $team eq "") {
+	$team =~ s/^\s+|\s+$//g if defined($team);
+	if (!defined($team) || $team eq "" || $team =~ /spectator|unassigned/i) {
 		return 0;
 	}
 	return 1;
