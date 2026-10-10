@@ -526,7 +526,7 @@ case "$1" in
 				0)
 					echo "Daemon successfully started on port ${CURRENTPORT}"
 					let CURRENTPORT=CURRENTPORT+INCREMENT
-					let i++
+					i=$((i + 1))
 				;;
 				1)
 					echo "CRITICAL ERROR: Unable to start daemon on port ${CURRENTPORT}"
@@ -535,7 +535,7 @@ case "$1" in
 				2)
 					echo "Daemon is already running on port ${CURRENTPORT}"
 					let CURRENTPORT=CURRENTPORT+INCREMENT
-					let i++
+					i=$((i + 1))
 				;;
 			esac
 		done
