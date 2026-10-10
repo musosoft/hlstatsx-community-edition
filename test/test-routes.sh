@@ -138,7 +138,6 @@ http://web/hlstats.php?mode=admin&task=tools_settings_copy 200
 http://web/hlstats.php?mode=admin&task=tools_synchronize 200
 "
 COOKIE=$( curl -X POST -vkL -H "Content-Type: application/x-www-form-urlencoded" -d 'authusername=admin&authpassword=123456' http://web/hlstats.php?mode=admin -o/dev/null 2>&1 | grep -i set-cookie | awk '{print $3}' )
-echo "Cookie: $COOKIE"
 echo "$URLS_ADMIN" | awk NF | while read -r i j; do
     if curl -vkL -H "Content-Type: application/x-www-form-urlencoded" -H "Cookie: $COOKIE" "$i" 2>&1 | grep "HTTP/1.1 $j " > /dev/null; then
         echo "PASS: $i"

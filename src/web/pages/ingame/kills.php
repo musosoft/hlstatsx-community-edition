@@ -195,7 +195,7 @@ For support and installation notes visit http://www.hlxcommunity.com
 
 	//there might be a better way to do this, but I could not figure one out.
 
-	$db->query("DROP TABLE IF EXISTS hlstats_Frags_Kills");
+	$db->query("DROP TEMPORARY TABLE IF EXISTS hlstats_Frags_Kills");
 
 	$sql_create_temp_table = "
 		CREATE TEMPORARY TABLE hlstats_Frags_Kills

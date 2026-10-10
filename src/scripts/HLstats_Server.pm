@@ -40,6 +40,9 @@ use Socket;
 use Encode;
 use Syntax::Keyword::Try;
 
+# Share scalar player counts between servers for the same game, not DB handles.
+my %player_count_cache;
+
 do "$::opt_libdir/HLstats_GameConstants.plib";
 
 sub new
@@ -1111,12 +1114,30 @@ sub flushDB
 		$result->finish;
 	}   
 
-	my $result = &::execCached(
-		"get_player_count",
-		"SELECT count(*) as players FROM hlstats_Players WHERE game=? and hideranking<>2",
-		&::quoteSQL($self->{game}));
-	$self->{players} = $result->fetchrow_array();
-	$result->finish;
+	my $game = $self->{game};
+	my $now = time;
+	my $cached_count = $player_count_cache{$game};
+	if ($cached_count && $now >= $cached_count->{time}
+		&& $now - $cached_count->{time} < 5)
+	{
+		$self->{players} = $cached_count->{players};
+	}
+	else
+	{
+		# Invalidate before querying so failed refreshes cannot retain stale counts.
+		delete $player_count_cache{$game};
+		my $result = &::execCached(
+			"get_player_count",
+			"SELECT count(*) as players FROM hlstats_Players WHERE game=? and hideranking<>2",
+			&::quoteSQL($game));
+		$self->{players} = $result->fetchrow_array();
+		my $fetch_error = $result->err;
+		my $finished = $result->finish;
+		if (defined($self->{players}) && !$fetch_error && $finished)
+		{
+			$player_count_cache{$game} = { time => $now, players => $self->{players} };
+		}
+	}
 	
 	
 	# Update player details

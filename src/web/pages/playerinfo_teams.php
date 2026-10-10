@@ -210,7 +210,7 @@ For support and installation notes visit http://www.hlxcommunity.com
 		true
 	);
 
-	$db->query("DROP TABLE IF EXISTS hlstats_Frags_as");
+	$db->query("DROP TEMPORARY TABLE IF EXISTS hlstats_Frags_as");
 
 	$sql_create_temp_table = "
 		CREATE TEMPORARY TABLE hlstats_Frags_as
@@ -261,7 +261,7 @@ For support and installation notes visit http://www.hlxcommunity.com
 			hlstats_Events_Frags.victimId = $player 
 	");
 
-	$db->query("DROP TABLE IF EXISTS hlstats_Frags_as_res");
+	$db->query("DROP TEMPORARY TABLE IF EXISTS hlstats_Frags_as_res");
 
 	$sql_create_temp_table = "
 		CREATE TEMPORARY TABLE hlstats_Frags_as_res

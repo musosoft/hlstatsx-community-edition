@@ -149,9 +149,18 @@ sub quoteSQL
 
 sub doConnect
 {
+	require DBD::mysql;
+	my %mysql_connect_options;
+	if (eval { DBD::mysql->VERSION(4.032); 1 }) {
+		%mysql_connect_options = (mysql_enable_utf8mb4 => 1);
+	} else {
+		%mysql_connect_options = (mysql_enable_utf8 => 1);
+		&printEvent("MYSQL", "DBD::mysql 4.032+ is required for full utf8mb4 handling; using legacy UTF-8 mode", 1);
+	}
+
 	$db_conn = DBI->connect(
 		"DBI:mysql:$db_name:$db_host",
-		$db_user, $db_pass, { mysql_enable_utf8 => 1 }
+		$db_user, $db_pass, \%mysql_connect_options
 	);
 	while(!$db_conn) {
 		&printEvent("MYSQL", "\nCan't connect to MySQL database '$db_name' on '$db_host'\n" .
@@ -159,7 +168,7 @@ sub doConnect
 		sleep(5);
 		$db_conn = DBI->connect(
 			"DBI:mysql:$db_name:$db_host",
-			$db_user, $db_pass, { mysql_enable_utf8 => 1 }
+			$db_user, $db_pass, \%mysql_connect_options
 		);
 	}
 	$db_conn->do("SET NAMES 'utf8mb4'");

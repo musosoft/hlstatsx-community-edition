@@ -40,6 +40,15 @@ For support and installation notes visit http://www.hlxcommunity.com
         die('Do not access this file directly.');
     }
 
+	if (empty($_SESSION['loggedin']) || !isset($_SESSION['acclevel'])
+		|| !is_numeric($_SESSION['acclevel']) || $_SESSION['acclevel'] < 80
+		|| !isset($_SESSION['authsessionStart'])
+		|| !is_numeric($_SESSION['authsessionStart'])
+		|| $_SESSION['authsessionStart'] <= time() - 3600
+		|| $_SESSION['authsessionStart'] > time()) {
+		die('Access denied!');
+	}
+
 // Global Server Chat History
 	$showserver = 0;
 	if (isset($_GET['server_id'])) {

@@ -2,7 +2,7 @@
 
 -- This file is only needed for new installations.
 
-SET @DBVERSION="91";
+SET @DBVERSION="92";
 SET @VERSION="1.11.6";
 
 -- --------------------------------------------------------
@@ -4251,7 +4251,8 @@ CREATE TABLE IF NOT EXISTS `hlstats_Players` (
   KEY `skill` (`skill`),
   KEY `game` (`game`),
   KEY `kills` (`kills`),
-  KEY `hideranking` (`hideranking`)
+  KEY `hideranking` (`hideranking`),
+  KEY `game_hideranking` (`game`, `hideranking`)
 ) ENGINE=MyISAM  DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------

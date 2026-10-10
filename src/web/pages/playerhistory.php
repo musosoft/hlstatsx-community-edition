@@ -145,7 +145,7 @@ For support and installation notes visit http://www.hlxcommunity.com
 	$surl = $g_options['scripturl'];
 // This would be better done with a UNION query, I think, but MySQL doesn't
 // support them yet. (NOTE you need MySQL 3.23 for temporary table support.)
-	$db->query("DROP TABLE IF EXISTS hlstats_EventHistory");
+	$db->query("DROP TEMPORARY TABLE IF EXISTS hlstats_EventHistory");
 
 	$sql_create_temp_table = "
 		CREATE TEMPORARY TABLE hlstats_EventHistory
