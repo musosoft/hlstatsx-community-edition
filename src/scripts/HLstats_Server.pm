@@ -121,6 +121,14 @@ sub new
 	$self->{ba_map_rounds}    = 0;
 	$self->{ba_last_swap}     = 0;
 	$self->{ba_player_switch} = 0;  # player switched on his own
+	$self->{ba_swapped_players} = {};
+	$self->{ba_pending_swaps} = {};
+	$self->{ba_round_orientation} = [];
+	$self->{ba_balance_pending} = 0;
+	$self->{ba_balance_due} = 0;
+	$self->{ba_balance_deadline} = 0;
+	$self->{ba_roster_changed_at} = 0;
+	$self->{ba_halftime_rotated} = 0;
 	$self->{balance_switch_only_dead} = 0;
 	$self->{balance_ignore_bots} = 0;
 	$self->{balance_start_rounds} = 0;
@@ -813,53 +821,365 @@ sub clear_winner
   @{$self->{winner}} = ();
 }
 
+sub apply_team_balance_config_defaults
+{
+	my ($self, $config) = @_;
+	my %defaults = (
+		BalanceSwitchOnlyDead => 1,
+		BalanceStartRounds => 7,
+		BalanceRoundsDelay => 3,
+		BalanceAnalyzeRounds => 7,
+		BalanceMaxWins => 1,
+		BalanceIgnoreBots => 0,
+	);
+
+	for my $key (keys %defaults) {
+		if (!defined($config->{$key}) || $config->{$key} !~ /\S/) {
+			$config->{$key} = $defaults{$key};
+		}
+	}
+	if ($config->{BalanceAnalyzeRounds} !~ /^\d+$/ || $config->{BalanceAnalyzeRounds} < 1) {
+		$config->{BalanceAnalyzeRounds} = $defaults{BalanceAnalyzeRounds};
+	}
+
+	return $config;
+}
+
+sub reset_team_balance
+{
+	my ($self) = @_;
+	$self->clear_winner();
+	$self->{ba_ct_wins} = 0;
+	$self->{ba_ts_wins} = 0;
+	$self->{ba_map_rounds} = 0;
+	$self->{ba_last_swap} = 0;
+	$self->{ba_player_switch} = 0;
+	$self->{ba_swapped_players} = {};
+	$self->{ba_pending_swaps} = {};
+	$self->{ba_round_orientation} = [];
+	$self->{ba_balance_pending} = 0;
+	$self->{ba_balance_due} = 0;
+	$self->{ba_balance_deadline} = 0;
+	$self->{ba_roster_changed_at} = 0;
+	$self->{ba_halftime_rotated} = 0;
+	$self->{map_rounds} = 0;
+}
+
+sub schedule_team_balance
+{
+	my ($self, $now) = @_;
+	return if $::g_stdin != 0 || $self->{ba_enabled} == 0;
+
+	$now = time() if !defined($now);
+	my $max_wait = 15;
+	my $mode = $self->dorcon("bot_quota_mode");
+	my $fill_mode = defined($mode) && $mode =~ /bot_quota_mode[^\r\n]*?\bfill\b/i;
+	if ($fill_mode) {
+		my $delay = $self->dorcon("bot_join_delay");
+		if (defined($delay) && $delay =~ /bot_join_delay[^\r\n]*?=\s*"?(\d+)/i
+			&& $1 + 5 > $max_wait) {
+			$max_wait = $1 + 5;
+		}
+	}
+	$self->{ba_balance_pending} = 1;
+	# Fill mode can reconcile bots at round start even when quota counts match.
+	# Keep ATB out of that race window before doing its first analysis.
+	$self->{ba_balance_due} = $now + ($fill_mode ? $max_wait : 2);
+	$self->{ba_balance_deadline} = $now + $max_wait;
+}
+
+sub note_balance_roster_change
+{
+	my ($self, $now) = @_;
+	$now = time() if !defined($now);
+	$self->{ba_roster_changed_at} = $now;
+	if ($self->{ba_balance_pending}) {
+		my $new_due = $now + 2;
+		$new_due = $self->{ba_balance_due}
+			if $self->{ba_balance_due} > $now && $self->{ba_balance_due} > $new_due;
+		$self->{ba_balance_due} = $new_due;
+		$self->{ba_balance_due} = $self->{ba_balance_deadline}
+			if $self->{ba_balance_due} > $self->{ba_balance_deadline};
+	} else {
+		my $mode = $self->dorcon("bot_quota_mode");
+		if (defined($mode) && $mode =~ /bot_quota_mode[^\r\n]*?\bfill\b/i) {
+			$self->schedule_team_balance($now);
+		}
+	}
+}
+
+sub run_pending_team_balance
+{
+	my ($self, $now) = @_;
+	return if !$self->{ba_balance_pending} || $now < $self->{ba_balance_due};
+	$self->expire_pending_balance_swaps($now);
+
+	my $before_deadline = $now < $self->{ba_balance_deadline};
+	my $recent_change = $self->{ba_roster_changed_at}
+		&& $now - $self->{ba_roster_changed_at} < 2;
+	if ($before_deadline && ($recent_change || $self->bot_fill_roster_is_changing())) {
+		$self->{ba_balance_due} = $now + 1;
+		$self->{ba_balance_due} = $self->{ba_balance_deadline}
+			if $self->{ba_balance_due} > $self->{ba_balance_deadline};
+		return;
+	}
+
+	$self->{ba_balance_pending} = 0;
+	$self->analyze_teams();
+}
+
+sub bot_fill_roster_is_changing
+{
+	my ($self) = @_;
+	my $mode = $self->dorcon("bot_quota_mode");
+	return 0 if !defined($mode) || $mode !~ /bot_quota_mode[^\r\n]*?\bfill\b/i;
+
+	my $quota_output = $self->dorcon("bot_quota");
+	return 0 if !defined($quota_output) || $quota_output !~ /bot_quota[^\r\n]*?=\s*"?(\d+)/i;
+	my $quota = $1;
+	my $human_count = 0;
+	my $bot_count = 0;
+	for my $player (values %{$self->{srv_players}}) {
+		my $team = $player->{team} // "";
+		return 1 if $team eq "" || $team =~ /^Unassigned$/i;
+
+		if ($player->{is_bot}) {
+			$bot_count++;
+		} else {
+			$human_count++;
+		}
+	}
+
+	my $expected_bots = $quota - $human_count;
+	$expected_bots = 0 if $expected_bots < 0;
+	if ($self->{maxplayers} > 0 && $expected_bots + $human_count > $self->{maxplayers}) {
+		$expected_bots = $self->{maxplayers} - $human_count;
+	}
+
+	return $bot_count != $expected_bots;
+}
+
+sub mark_balance_player_swapped
+{
+	my ($self, $entry) = @_;
+	my $key = $entry->[9] ? "bot:$entry->[8]" : "human:$entry->[1]";
+	$self->{ba_swapped_players}{$key} = 1;
+}
+
+sub balance_player_key
+{
+	my ($self, $entry) = @_;
+	return $entry->[9] ? "bot:$entry->[8]" : "human:$entry->[1]";
+}
+
+sub balance_player_swap_pending
+{
+	my ($self, $entry) = @_;
+	return exists $self->{ba_pending_swaps}{$self->balance_player_key($entry)};
+}
+
+sub request_balance_player_swap
+{
+	my ($self, $entry, $counts_as_skill_balance) = @_;
+	my $key = $self->balance_player_key($entry);
+	return 0 if $self->balance_player_was_swapped($entry)
+		|| exists $self->{ba_pending_swaps}{$key};
+	return 0 if !$self->switch_player($entry->[8], $entry->[0]);
+
+	$self->{ba_pending_swaps}{$key} = {
+		team => $entry->[3] eq "CT" ? "TERRORIST" : "CT",
+		expires => time() + 15,
+		counts_as_skill_balance => $counts_as_skill_balance ? 1 : 0,
+	};
+	return 1;
+}
+
+sub confirm_balance_player_swap
+{
+	my ($self, $player) = @_;
+	my $key = $player->{is_bot}
+		? "bot:$player->{userid}"
+		: "human:$player->{uniqueid}";
+	my $pending = $self->{ba_pending_swaps}{$key};
+	return 0 if !$pending || $player->{team} ne $pending->{team};
+	if ($pending->{expires} <= time()) {
+		delete $self->{ba_pending_swaps}{$key};
+		return 0;
+	}
+	delete $self->{ba_pending_swaps}{$key};
+	$self->{ba_swapped_players}{$key} = 1;
+	$self->{ba_last_swap} = $self->{balance_rounds_delay}
+		if $pending->{counts_as_skill_balance};
+	return 1;
+}
+
+sub expire_pending_balance_swaps
+{
+	my ($self, $now) = @_;
+	for my $key (keys %{$self->{ba_pending_swaps}}) {
+		delete $self->{ba_pending_swaps}{$key}
+			if $self->{ba_pending_swaps}{$key}{expires} <= $now;
+	}
+}
+
+sub balance_player_was_swapped
+{
+	my ($self, $entry) = @_;
+	my $key = $entry->[9] ? "bot:$entry->[8]" : "human:$entry->[1]";
+	return $self->{ba_swapped_players}{$key} || 0;
+}
+
+sub prepare_halftime_balance
+{
+	my ($self) = @_;
+	return if !$self->{mp_halftime} || $self->{ba_halftime_rotated};
+
+	my $half_by_rounds = $self->{mp_maxrounds} > 0
+		&& $self->{map_rounds} == int($self->{mp_maxrounds} / 2);
+	my $half_by_time = $self->{mp_timelimit} > 0
+		&& time() - $self->{map_started} >= ($self->{mp_timelimit} * 30);
+	return if !$half_by_rounds && !$half_by_time;
+
+	for my $i (0 .. $#{$self->{winner}}) {
+		$self->{winner}[$i] = $self->{winner}[$i] eq "ct" ? "ts" : "ct"
+			if defined($self->{winner}[$i]) && $self->{winner}[$i] ne "";
+	}
+	$self->{ba_halftime_rotated} = 1;
+	$self->recount_balance_wins();
+	$self->note_balance_roster_change();
+}
+
+sub archive_completed_map_team_results
+{
+	my ($self, $completed_map) = @_;
+	my $rounds = $self->{map_ct_wins} + $self->{map_ts_wins};
+	return 0 if !$completed_map || $self->{map_started} <= 0 || $rounds < 10;
+
+	my $query = sprintf(
+		"INSERT IGNORE INTO hlstats_MapTeamBalanceMatches " .
+		"(serverId, map, mapStarted, ct_rounds, ts_rounds) VALUES (%d, '%s', %d, %d, %d)",
+		$self->{id}, &::quoteSQL($completed_map), $self->{map_started},
+		$self->{map_ct_wins}, $self->{map_ts_wins},
+	);
+	my $stored = eval { &::execNonQuery($query); 1 };
+	if (!$stored && !$self->{ba_map_bias_storage_warning}) {
+		&::printEvent("TEAMS", "Map side-bias history could not be saved; ATB will use raw round results", 1);
+		$self->{ba_map_bias_storage_warning} = 1;
+	}
+	return $stored ? 1 : 0;
+}
+
+sub get_map_team_bias
+{
+	my ($self) = @_;
+	my $no_bias = { active => 0, ct_rate => 0.5, ts_rate => 0.5, rounds => 0 };
+	my $result = eval {
+		&::execCached(
+			"get_map_team_balance_matches",
+			"SELECT COALESCE(SUM(ct_rounds), 0), COALESCE(SUM(ts_rounds), 0) " .
+			"FROM hlstats_MapTeamBalanceMatches WHERE serverId=? AND map=? " .
+			"AND ct_rounds + ts_rounds >= 10",
+			$self->{id}, $self->{map},
+		);
+	};
+	if (!$result) {
+		if (!$self->{ba_map_bias_storage_warning}) {
+			&::printEvent("TEAMS", "Map side-bias history unavailable; ATB will use raw round results", 1);
+			$self->{ba_map_bias_storage_warning} = 1;
+		}
+		return $no_bias;
+	}
+	my ($ct_rounds, $ts_rounds) = $result->fetchrow_array();
+	$ct_rounds ||= 0;
+	$ts_rounds ||= 0;
+	my $rounds = $ct_rounds + $ts_rounds;
+	return $no_bias if $rounds < 60;
+
+	my $ct_rate = $ct_rounds / $rounds;
+	my $ts_rate = $ts_rounds / $rounds;
+	return $no_bias if abs($ct_rate - 0.5) < 0.10;
+
+	return {
+		active => 1,
+		ct_rate => $ct_rate,
+		ts_rate => $ts_rate,
+		rounds => $rounds,
+	};
+}
+
+sub get_map_adjusted_team_excess
+{
+	my ($self, $ct_wins, $ts_wins) = @_;
+	my $bias = $self->get_map_team_bias();
+	return (0, 0, 0) if !$bias->{active};
+
+	my $expected_ct_wins = 0;
+	my $rounds = 0;
+	my $current_orientation = $self->{ba_halftime_rotated} ? 1 : 0;
+	for my $i (0 .. $#{$self->{winner}}) {
+		next if !defined($self->{winner}[$i]) || $self->{winner}[$i] eq "";
+		my $round_orientation = $self->{ba_round_orientation}[$i] || 0;
+		my $ct_group_played_ct = $round_orientation == $current_orientation;
+		$expected_ct_wins += $ct_group_played_ct ? $bias->{ct_rate} : $bias->{ts_rate};
+		$rounds++;
+	}
+	return (0, 0, 0) if !$rounds;
+
+	my $expected_ts_wins = $rounds - $expected_ct_wins;
+	return (
+		$ct_wins - $expected_ct_wins,
+		$ts_wins - $expected_ts_wins,
+		1,
+	);
+}
+
+sub recount_balance_wins
+{
+	my ($self) = @_;
+	$self->{ba_ct_wins} = 0;
+	$self->{ba_ts_wins} = 0;
+	for (@{$self->{winner}}) {
+		$self->{ba_ct_wins}++ if $_ eq "ct";
+		$self->{ba_ts_wins}++ if $_ eq "ts";
+	}
+}
+
 sub add_round_winner
 {
 	my ($self, $team) = @_;
-  
+
 	&::printNotice("add_round_winner");
 	$self->increment("ba_map_rounds");
 	$self->increment("map_rounds");
 	$self->increment("rounds");
 	$self->increment("total_rounds");
 
-	# switch stats one round AFTER halftime, because teams in game are switched on start of next round
-	if ($self->{mp_halftime} && $self->{map_rounds} == int($self->{mp_maxrounds} / 2) + 1) {
-		# $self->debug_message("HLstatsX:CE - ATB: Halftime ended, switching stats.");
-
-		while (my($k, $val) = each(@{$self->{winner}})) {
-			$self->{winner}[$k] = $val eq "ct" ? "ts" : "ct";
-		}
-	}
-
-	$self->{winner}[($self->{map_rounds} % $self->{balance_analyze_rounds})] = $team;
-
-	$self->{ba_ct_wins} = 0;
-	$self->{ba_ts_wins} = 0;
-  
-	for (@{$self->{winner}}) 
-	{
-		if ($_ eq "ct") {
-			$self->increment("ba_ct_wins");
-		} elsif ($_ eq "ts") {
-			$self->increment("ba_ts_wins");
-		}
-	}
+	my $analyze_rounds = $self->{balance_analyze_rounds};
+	$analyze_rounds = 7 if !defined($analyze_rounds) || $analyze_rounds !~ /^\d+$/ || $analyze_rounds < 1;
+	my $index = $self->{map_rounds} % $analyze_rounds;
+	$self->{winner}[$index] = $team;
+	$self->{ba_round_orientation}[$index] = $self->{ba_halftime_rotated} ? 1 : 0;
+	$self->recount_balance_wins();
 }
 
 sub switch_player
 {
 	my ($self, $playerid, $name) = @_;
+	return 0 if !$self->{swap_command};
 	my $rcmd = $self->{player_command_hint};
 	
-	$self->dorcon($self->{swap_command}." ".$self->format_userid($playerid));
+	my $result = $self->dorcon($self->{swap_command}." ".$self->format_userid($playerid));
+	return 0 if !defined($result);
 	if ($self->{player_command_hint} eq "") {
 		$rcmd = $self->{player_command};
 	}
-	$self->dorcon(sprintf("%s %s %s", $rcmd, $self->format_userid($playerid), $self->quoteparam("HLstatsX:CE - You were switched to balance teams")));
+	if ($rcmd ne "") {
+		$self->dorcon(sprintf("%s %s %s", $rcmd, $self->format_userid($playerid), $self->quoteparam("HLstatsX:CE - You were switched to balance teams")));
+	}
 	# if ($self->{player_admin_command} ne "") {
 	# 	$self->dorcon(sprintf("%s %s",$self->{player_admin_command}, $self->quoteparam("HLstatsX:CE - $name was switched to balance teams")));
 	# }
+	return 1;
 }
 
 sub debug_message
@@ -880,16 +1200,7 @@ sub analyze_teams
 		return;
 	}
 
-	if ($self->{num_trackable_players} < $self->{minplayers}) {
-		&::printNotice("(IGNORED) NOTMINPLAYERS: analyze_teams");
-		return;
-	}
-
-	if ($self->{map_rounds} < 2) {
-		&::printNotice("(IGNORED) NOTMINROUNDS: analyze_teams");
-		return;
-	}
-
+	# Count correction is independent of score history and can run after round 1.
 	&::printNotice("analyze_teams");
 	my $ts_skill     = 0;
 	my $ts_avg_skill = 0;
@@ -951,6 +1262,19 @@ sub analyze_teams
 	$self->messageAll("HLstatsX:CE - ATB - Checking Teams", 0, 1);
 
 	my $action_done = 0;
+	# At or below the configured population threshold only correct team counts;
+	# do not use round score to choose the players being moved.
+	my $can_balance_by_score = $self->{num_trackable_players} > $self->{minplayers};
+	my ($ct_excess, $ts_excess, $has_map_bias) = (0, 0, 0);
+	if ($can_balance_by_score) {
+		($ct_excess, $ts_excess, $has_map_bias) = $self->get_map_adjusted_team_excess($ct_wins, $ts_wins);
+	}
+	my $ct_underperforming = $has_map_bias
+		? $ct_excess < -$self->{balance_max_wins}
+		: $ct_wins <= $self->{balance_max_wins};
+	my $ts_underperforming = $has_map_bias
+		? $ts_excess < -$self->{balance_max_wins}
+		: $ts_wins <= $self->{balance_max_wins};
 	if ($self->{ba_last_swap} > 0) {
 		$self->{ba_last_swap}--;
 	}
@@ -963,7 +1287,7 @@ sub analyze_teams
 
 	if ($ct_count + 1 < $ts_count) {
 		$needed_players = floor( ($ts_count - $ct_count) / 2);
-		if ($ct_wins <= $self->{balance_max_wins}) {
+		if ($can_balance_by_score && $ct_underperforming) {
 			@possible_players = sort { $b->[6] <=> $a->[6]} @ts_players;  # best player
 			$count_as_skill_balance = 1;
 		} else {
@@ -972,7 +1296,7 @@ sub analyze_teams
 		}
 	} elsif ($ts_count + 1 < $ct_count) {
 		$needed_players = floor( ($ct_count - $ts_count) / 2);
-		if ($ts_wins <= $self->{balance_max_wins}) {
+		if ($can_balance_by_score && $ts_underperforming) {
 			@possible_players = sort { $b->[6] <=> $a->[6]} @ct_players;  # best player
 			$count_as_skill_balance = 1;
 		} else {
@@ -990,38 +1314,36 @@ sub analyze_teams
 			next;
 		}
 
-		if (!$action_done) {
-			select(undef, undef, undef, 4.5);
+		if ($self->balance_player_was_swapped($entry) || $self->balance_player_swap_pending($entry)) {
+			next;
 		}
 		$self->messageAll("HLstatsX:CE - ATB - Player [" . @{$entry}[3] . "] " . @{$entry}[0] . " was switched to ensure an even team count.", 0, 1);
-		$self->switch_player(@{$entry}[8], @{$entry}[0]);
-		$action_done++;
-		$needed_players--;
+		if ($self->request_balance_player_swap($entry, $count_as_skill_balance)) {
+			$action_done++;
+			$needed_players--;
+		}
 	}
 
 	if ($action_done) {
-		if ($count_as_skill_balance) {
-			$self->{ba_last_swap} = $self->{balance_rounds_delay};
-		}
 		return;
 	}
 	# End of balance based on team count.
 
 	# Balance based on frags.
-	if ($self->{ba_last_swap} > 0 || $self->{map_rounds} < $self->{balance_start_rounds}) {
+	if (!$can_balance_by_score || $self->{ba_last_swap} > 0 || $self->{map_rounds} < $self->{balance_start_rounds}) {
 		return;
 	}
 
 	my $need_ct = 0;
 	my $need_ts = 0;
-	if ($ct_wins <= $self->{balance_max_wins}) {
+	if ($ct_underperforming) {
 		$need_ct = $ct_count < $ts_count ? 0 : 1;
 		$need_ts = 1;
 
 		@ts_players = sort { $b->[6] <=> $a->[6]} @ts_players;  # best player
 		shift(@ts_players); # remove first best
 		@ct_players = sort { $a->[6] <=> $b->[6]} @ct_players;  # worst player
-	} elsif ($ts_wins <= $self->{balance_max_wins}) {
+	} elsif ($ts_underperforming) {
 		$need_ct = 1;
 		$need_ts = $ts_count < $ct_count ? 0 : 1;
 
@@ -1034,7 +1356,10 @@ sub analyze_teams
 	my @ts_switch_player = ();
 
 	foreach my $entry (@ct_players) {
-		if ((@{$entry}[7] == 0 && $self->{balance_switch_only_dead}) || ($self->is_admin(@{$entry}[1]) == 1 && !$self->{switch_admins})) {
+		if ($self->balance_player_was_swapped($entry)
+			|| $self->balance_player_swap_pending($entry)
+			|| (@{$entry}[7] == 0 && $self->{balance_switch_only_dead})
+			|| ($self->is_admin(@{$entry}[1]) == 1 && !$self->{switch_admins})) {
 			next;
 		}
 
@@ -1043,7 +1368,10 @@ sub analyze_teams
 	}
 
 	foreach my $entry (@ts_players) {
-		if ((@{$entry}[7] == 0 && $self->{balance_switch_only_dead}) || ($self->is_admin(@{$entry}[1]) == 1 && !$self->{switch_admins})) {
+		if ($self->balance_player_was_swapped($entry)
+			|| $self->balance_player_swap_pending($entry)
+			|| (@{$entry}[7] == 0 && $self->{balance_switch_only_dead})
+			|| ($self->is_admin(@{$entry}[1]) == 1 && !$self->{switch_admins})) {
 			next;
 		}
 
@@ -1051,23 +1379,21 @@ sub analyze_teams
 		last;
 	}
 
-	select(undef, undef, undef, 4.5);
 	if ($need_ct && @ct_switch_player && $need_ts && @ts_switch_player) {
 		$self->messageAll("HLstatsX:CE - ATB - Switching players [CT] " . @ct_switch_player[0] . " ⇆ [T] " . @ts_switch_player[0] . " to balance teams.", 0, 1);
-		$self->switch_player(@ct_switch_player[8], @ct_switch_player[0]);
-		$self->switch_player(@ts_switch_player[8], @ts_switch_player[0]);
+		my $ct_requested = $self->request_balance_player_swap(\@ct_switch_player, 1);
+		my $ts_requested = $self->request_balance_player_swap(\@ts_switch_player, 1);
+		return if !$ct_requested && !$ts_requested;
 	} elsif ($need_ct && @ct_switch_player && !$need_ts) {
 		$self->messageAll("HLstatsX:CE - ATB - Player [CT] " . @ct_switch_player[0] . " was switched to balance teams.", 0, 1);
-		$self->switch_player(@ct_switch_player[8], @ct_switch_player[0]);
+		return if !$self->request_balance_player_swap(\@ct_switch_player, 1);
 	} elsif ($need_ts && @ts_switch_player && !$need_ct) {
 		$self->messageAll("HLstatsX:CE - ATB - Player [T] " . @ts_switch_player[0] . " was switched to balance teams.", 0, 1);
-		$self->switch_player(@ts_switch_player[8], @ts_switch_player[0]);
+		return if !$self->request_balance_player_swap(\@ts_switch_player, 1);
 	} else {
 		# No players found or needed to switch.
 		return;
 	}
-
-	$self->{ba_last_swap} = $self->{balance_rounds_delay};
 
 	# End of balance based on frags.
 }

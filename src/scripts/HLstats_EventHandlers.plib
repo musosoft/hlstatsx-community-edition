@@ -417,7 +417,7 @@ sub endKillStreak
 #
 
 sub doEvent_Connect
-{	
+{
 	my ($playerId, $playerUniqueId, $ipAddr) = @_;
 
 	my $desc;
@@ -429,6 +429,7 @@ sub doEvent_Connect
 	
 	if ($player)
 	{
+		$g_servers{$s_addr}->note_balance_roster_change();
 		if ($ipAddr eq "") {
 		    $ipAddr = $player->{address};
 		}
@@ -682,6 +683,7 @@ sub doEvent_Disconnect
 	
 	if ($player)
 	{
+		$g_servers{$s_addr}->note_balance_roster_change();
 		if (($g_servers{$s_addr}->{ignore_bots} == 1) && (($player->{is_bot} == 1) || ($pUserId < 0)))
 		{
 			$player->updateDB();
@@ -948,9 +950,11 @@ sub doEvent_TeamSelection
 	
 	if ($player)
 	{
+		$g_servers{$s_addr}->note_balance_roster_change();
 		if (($g_servers{$s_addr}->{ignore_bots} == 1) && ($player->{is_bot} == 1))
 		{
 			$player->set("team", $team);
+			$g_servers{$s_addr}->confirm_balance_player_swap($player);
 			$desc = "(IGNORED) BOT: ";
 		} else {
 			$old_team = $player->{team};
@@ -969,6 +973,7 @@ sub doEvent_TeamSelection
 			$player->updateTrackable();
 			$player->updateDB();
 			$g_servers{$s_addr}->updatePlayerCount();
+			$g_servers{$s_addr}->confirm_balance_player_swap($player);
 		}
 	}
 	else
@@ -2116,7 +2121,7 @@ sub doEvent_WorldAction
 	}
 	if ($action eq "Round_End" || $action eq "Round_Win" || $action eq "Mini_Round_Win") {
 		if ($action eq "Round_End") {
-			$g_servers{$s_addr}->analyze_teams();
+			$g_servers{$s_addr}->schedule_team_balance();
 		}
 		
 		if (($g_servers{$s_addr}->{lastdisabledbonus}+5) < $ev_remotetime && $g_servers{$s_addr}->{bonusroundignore} > 0) {
@@ -2152,6 +2157,7 @@ sub doEvent_WorldAction
 		if ($action eq "Round_Start") {
 			$g_servers{$s_addr}->set("round_status", 0);
 			$g_servers{$s_addr}->set("ba_player_switch", 0);
+			$g_servers{$s_addr}->prepare_halftime_balance();
 		}
 		
 		while (my($pl, $player) = each(%g_players) )
@@ -2175,6 +2181,7 @@ sub doEvent_WorldAction
 		}
 	}
 	if ($action eq "Game_Commencing") {
+		$g_servers{$s_addr}->reset_team_balance();
 		$g_servers{$s_addr}->set("round_status", 0);
 		$g_servers{$s_addr}->set("map_started", time());
 		$g_servers{$s_addr}->set("map_rounds", 0);
@@ -2976,6 +2983,9 @@ sub doEvent_Chat
 sub doEvent_ChangeMap
 {
 	my ($type, $newmap) = @_;
+	if ($type eq "loading" || $type eq "started") {
+		$g_servers{$s_addr}->archive_completed_map_team_results($g_servers{$s_addr}->{map});
+	}
 	
     if ($newmap) {
         # CS2 does not log 'Started map' event, but 'Loading map' event before it should have populated $newmap already
@@ -2983,7 +2993,9 @@ sub doEvent_ChangeMap
     }
 	
 	$g_servers{$s_addr}->set("map", $newmap);
-	$g_servers{$s_addr}->clear_winner();
+	# Loading-map is emitted for RTV/votemap changes too. Clear round history
+	# and cooldown here rather than waiting for the previous map to end normally.
+	$g_servers{$s_addr}->reset_team_balance();
 
 	if ($type eq "loading")
 	{

@@ -2225,6 +2225,7 @@ while ($loop = &getLine()) {
 				next if ($tempsrv == 0);
 				$g_servers{$s_addr} = $tempsrv;
 				my %s_cfg = %{$g_config_servers{$s_addr}};
+				$g_servers{$s_addr}->apply_team_balance_config_defaults(\%s_cfg);
 				$g_servers{$s_addr}->set("minplayers", $s_cfg{"MinPlayers"});
 				$g_servers{$s_addr}->set("hlstats_url", $s_cfg{"HLStatsURL"});
 				if ($s_cfg{"DisplayResultsInBrowser"} > 0) {
@@ -3749,6 +3750,8 @@ EOT
 			$g_servers{$server}->flushDB();
 			$g_servers{$server}->{next_flush} = $ev_daemontime + 20;
 		}
+
+		$g_servers{$server}->run_pending_team_balance(time());
 	}
 
 	while ( my($pl, $player) = each(%g_preconnect) ) {
