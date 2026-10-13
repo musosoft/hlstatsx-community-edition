@@ -430,6 +430,7 @@ sub doEvent_Connect
 	if ($player)
 	{
 		$g_servers{$s_addr}->note_balance_roster_change();
+		$g_servers{$s_addr}->update_player_kd_cache($player);
 		if ($ipAddr eq "") {
 		    $ipAddr = $player->{address};
 		}
@@ -2986,6 +2987,15 @@ sub doEvent_ChangeMap
 	if ($type eq "loading" || $type eq "started") {
 		$g_servers{$s_addr}->archive_completed_map_team_results($g_servers{$s_addr}->{map});
 	}
+	if ($type eq "loading" || $type eq "started") {
+		$g_servers{$s_addr}->refresh_map_balance_rules();
+	}
+	if ($type eq "loading") {
+		for my $player (values %g_players) {
+			next if $player->{server} ne $s_addr;
+			$g_servers{$s_addr}->update_player_kd_cache($player);
+		}
+	}
 	
     if ($newmap) {
         # CS2 does not log 'Started map' event, but 'Loading map' event before it should have populated $newmap already
@@ -3336,6 +3346,30 @@ sub doEvent_ApiReqestPlayerInfo
 	}
 	
 	return $desc . $playerstr . " api_request playerinfo via HLStatsX API module";
+}
+
+sub doEvent_ApiRequestJoinPolicy
+{
+	my ($playerId, $playerUniqueId, $queryId) = @_;
+	my $desc;
+	my $player = lookupPlayer($s_addr, $playerId, $playerUniqueId);
+	my $playerstr = &getPlayerInfoString($player, $playerId);
+	$rcmd = "hlx_api_response";
+
+	if ($player && !$player->{is_bot}) {
+		my $policy = $g_servers{$s_addr}->get_join_team_policy($player);
+		my $p_userid = $player->{userid};
+		my $cmd_str = sprintf(
+			'%s "102" %d %d %d %d',
+			$rcmd, $queryId, $p_userid,
+			$policy->{preferred_team}, $policy->{kd_locked}
+		);
+		$g_servers{$s_addr}->dorcon($cmd_str);
+	} else {
+		$desc = "(IGNORED) NOPLAYERINFO: ";
+	}
+
+	return $desc . $playerstr . " api_request joinpolicy via HLStatsX API module";
 }
 
 1;

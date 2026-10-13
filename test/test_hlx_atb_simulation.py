@@ -62,9 +62,12 @@ def balance_counts_once_per_map(players, dead_only=True):
     difference = abs(before[0] - before[1])
     needed = difference // 2
     candidates = [p for p in players if p.team == larger]
-    candidates.sort(key=lambda player: (player.kills_diff, player.key))
-    # Production's count-only path excludes the absolute worst candidate.
-    candidates = candidates[1:]
+    # Fill-mode count correction moves a bot before a human when one is
+    # available, avoiding human churn for bot-only team-count skew.
+    candidates.sort(key=lambda player: (not player.is_bot, player.kills_diff, player.key))
+    # Retain the legacy human-protection rule only when no bot can absorb it.
+    if not any(player.is_bot for player in candidates):
+        candidates = candidates[1:]
     moved = 0
     for player in candidates:
         if moved >= needed:
@@ -111,8 +114,8 @@ def run_scenario(humans, rounds, churn, seed):
                 next_human += 1
             next_bot = fill_bots(players, 6, next_bot)
 
-        # The production daemon waits for a stable roster and matching fill quota
-        # before this point. A model assertion below protects that seam.
+        # Model the game completing its fill adjustment before ATB's observed
+        # roster-stability window releases a correction.
         humans_now = sum(not p.is_bot for p in players)
         bots_now = sum(p.is_bot for p in players)
         assert bots_now == max(0, 6 - humans_now)
@@ -143,6 +146,9 @@ class HLXATBSimulationTests(unittest.TestCase):
         daemon = (ROOT / "src/scripts/hlstats.pl").read_text()
         self.assertIn("sub run_pending_team_balance", server)
         self.assertIn("sub bot_fill_roster_is_changing", server)
+        self.assertIn("ba_fill_roster_stable_since", server)
+        self.assertIn("my @roster = sort map", server)
+        self.assertNotIn("my $expected_bots", server)
         self.assertIn("return if $::g_stdin != 0 || $self->{ba_enabled} == 0", server)
         self.assertIn("bot_quota_mode", server)
         self.assertIn("apply_team_balance_config_defaults(\\%s_cfg)", daemon)
@@ -153,6 +159,15 @@ class HLXATBSimulationTests(unittest.TestCase):
         self.assertIn("confirm_balance_player_swap($player)", team_selection)
         self.assertIn("run_pending_team_balance(time())", daemon)
         self.assertNotIn("select(undef, undef, undef, 4.5)", server)
+
+    def test_fill_count_correction_moves_bots_before_humans(self):
+        players = [
+            Player("human:0", 2, False, 50),
+            *[Player(f"bot:{i}", 3, True, i) for i in range(5)],
+        ]
+        self.assertEqual(balance_counts_once_per_map(players), 2)
+        self.assertFalse(next(p for p in players if p.key == "human:0").swapped)
+        self.assertEqual(team_counts(players), (3, 3))
 
     def test_map_swaps_are_limited_and_halftime_state_is_prepared(self):
         server = (ROOT / "src/scripts/HLstats_Server.pm").read_text()

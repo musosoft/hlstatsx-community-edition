@@ -124,6 +124,14 @@ sub new
 	$self->{ba_swapped_players} = {};
 	$self->{ba_pending_swaps} = {};
 	$self->{ba_round_orientation} = [];
+	$self->{ba_eligible_ct_rounds} = 0;
+	$self->{ba_eligible_ts_rounds} = 0;
+	$self->{ba_fill_roster_signature} = undef;
+	$self->{ba_fill_roster_stable_since} = 0;
+	$self->{jtc_enabled_checked_at} = 0;
+	$self->{jtc_enabled_cached} = 0;
+	$self->{jtc_threshold_checked_at} = 0;
+	$self->{jtc_threshold_cached} = 2.0;
 	$self->{ba_balance_pending} = 0;
 	$self->{ba_balance_due} = 0;
 	$self->{ba_balance_deadline} = 0;
@@ -705,15 +713,12 @@ sub get_map
 					$self->{play_game} == CSGO() ||
 					$self->{play_game} == CS2()
 				) {
-					if ($mp_timelimit > 0) {
-						$self->{mp_timelimit} = $mp_timelimit;
-					}
-					if ($mp_maxrounds > 0) {
-						$self->{mp_maxrounds} = $mp_maxrounds;
-					}
-					if ($mp_halftime > 0) {
-						$self->{mp_halftime} = $mp_halftime;
-					}
+					# Zero is meaningful: map-specific settings commonly disable
+					# halftime, round limits, or time limits. Do not carry a prior
+					# map's values into the next map's balance/history decision.
+					$self->{mp_timelimit} = $mp_timelimit;
+					$self->{mp_maxrounds} = $mp_maxrounds;
+					$self->{mp_halftime} = $mp_halftime;
 				}
 				if (($self->{update_hostname} > 0) && ($self->{name} ne $servhostname) && ($servhostname ne "")) {
 						$self->{name} = $servhostname;
@@ -751,6 +756,32 @@ sub get_map
 		}
 	}  
 	return $self->{map};
+}
+
+sub refresh_map_balance_rules
+{
+	my ($self) = @_;
+	my $rcon = $self->{rcon_obj};
+	return 0 if !$rcon;
+
+	# Clear first so a failed query cannot reuse the previous map's settings.
+	$self->{mp_maxrounds} = 0;
+	$self->{mp_timelimit} = 0;
+	$self->{mp_halftime} = 0;
+
+	my ($maxrounds, $timelimit, $halftime);
+	my $ok = eval {
+		$maxrounds = $rcon->getMaxRounds();
+		$timelimit = $rcon->getTimeLimit();
+		$halftime = $rcon->getHalfTime();
+		1;
+	};
+	return 0 if !$ok || !defined($maxrounds) || !defined($timelimit) || !defined($halftime);
+
+	$self->{mp_maxrounds} = $maxrounds + 0;
+	$self->{mp_timelimit} = $timelimit + 0;
+	$self->{mp_halftime} = $halftime + 0;
+	return 1;
 }
 
 
@@ -857,6 +888,10 @@ sub reset_team_balance
 	$self->{ba_swapped_players} = {};
 	$self->{ba_pending_swaps} = {};
 	$self->{ba_round_orientation} = [];
+	$self->{ba_eligible_ct_rounds} = 0;
+	$self->{ba_eligible_ts_rounds} = 0;
+	$self->{ba_fill_roster_signature} = undef;
+	$self->{ba_fill_roster_stable_since} = 0;
 	$self->{ba_balance_pending} = 0;
 	$self->{ba_balance_due} = 0;
 	$self->{ba_balance_deadline} = 0;
@@ -872,8 +907,7 @@ sub schedule_team_balance
 
 	$now = time() if !defined($now);
 	my $max_wait = 15;
-	my $mode = $self->dorcon("bot_quota_mode");
-	my $fill_mode = defined($mode) && $mode =~ /bot_quota_mode[^\r\n]*?\bfill\b/i;
+	my $fill_mode = $self->is_bot_fill_mode();
 	if ($fill_mode) {
 		my $delay = $self->dorcon("bot_join_delay");
 		if (defined($delay) && $delay =~ /bot_join_delay[^\r\n]*?=\s*"?(\d+)/i
@@ -901,8 +935,7 @@ sub note_balance_roster_change
 		$self->{ba_balance_due} = $self->{ba_balance_deadline}
 			if $self->{ba_balance_due} > $self->{ba_balance_deadline};
 	} else {
-		my $mode = $self->dorcon("bot_quota_mode");
-		if (defined($mode) && $mode =~ /bot_quota_mode[^\r\n]*?\bfill\b/i) {
+		if ($self->is_bot_fill_mode()) {
 			$self->schedule_team_balance($now);
 		}
 	}
@@ -914,13 +947,10 @@ sub run_pending_team_balance
 	return if !$self->{ba_balance_pending} || $now < $self->{ba_balance_due};
 	$self->expire_pending_balance_swaps($now);
 
-	my $before_deadline = $now < $self->{ba_balance_deadline};
 	my $recent_change = $self->{ba_roster_changed_at}
 		&& $now - $self->{ba_roster_changed_at} < 2;
-	if ($before_deadline && ($recent_change || $self->bot_fill_roster_is_changing())) {
+	if ($recent_change || $self->bot_fill_roster_is_changing($now)) {
 		$self->{ba_balance_due} = $now + 1;
-		$self->{ba_balance_due} = $self->{ba_balance_deadline}
-			if $self->{ba_balance_due} > $self->{ba_balance_deadline};
 		return;
 	}
 
@@ -930,33 +960,33 @@ sub run_pending_team_balance
 
 sub bot_fill_roster_is_changing
 {
+	my ($self, $now) = @_;
+	return 0 if !$self->is_bot_fill_mode();
+	$now = time() if !defined($now);
+
+	my @roster = sort map {
+		my $player = $_;
+		my $team = $player->{team} // "";
+		join(":", $player->{is_bot} ? 1 : 0, $player->{userid} // 0, $team);
+	} values %{$self->{srv_players}};
+	my $quota = $self->dorcon("bot_quota") // "";
+	my $signature = join("|", $quota, @roster);
+
+	if (!defined($self->{ba_fill_roster_signature})
+		|| $self->{ba_fill_roster_signature} ne $signature) {
+		$self->{ba_fill_roster_signature} = $signature;
+		$self->{ba_fill_roster_stable_since} = $now;
+		return 1;
+	}
+
+	return $now - ($self->{ba_fill_roster_stable_since} || $now) < 3;
+}
+
+sub is_bot_fill_mode
+{
 	my ($self) = @_;
 	my $mode = $self->dorcon("bot_quota_mode");
-	return 0 if !defined($mode) || $mode !~ /bot_quota_mode[^\r\n]*?\bfill\b/i;
-
-	my $quota_output = $self->dorcon("bot_quota");
-	return 0 if !defined($quota_output) || $quota_output !~ /bot_quota[^\r\n]*?=\s*"?(\d+)/i;
-	my $quota = $1;
-	my $human_count = 0;
-	my $bot_count = 0;
-	for my $player (values %{$self->{srv_players}}) {
-		my $team = $player->{team} // "";
-		return 1 if $team eq "" || $team =~ /^Unassigned$/i;
-
-		if ($player->{is_bot}) {
-			$bot_count++;
-		} else {
-			$human_count++;
-		}
-	}
-
-	my $expected_bots = $quota - $human_count;
-	$expected_bots = 0 if $expected_bots < 0;
-	if ($self->{maxplayers} > 0 && $expected_bots + $human_count > $self->{maxplayers}) {
-		$expected_bots = $self->{maxplayers} - $human_count;
-	}
-
-	return $bot_count != $expected_bots;
+	return defined($mode) && $mode =~ /bot_quota_mode[^\r\n]*?\bfill\b/i;
 }
 
 sub mark_balance_player_swapped
@@ -1035,7 +1065,7 @@ sub prepare_halftime_balance
 	return if !$self->{mp_halftime} || $self->{ba_halftime_rotated};
 
 	my $half_by_rounds = $self->{mp_maxrounds} > 0
-		&& $self->{map_rounds} == int($self->{mp_maxrounds} / 2);
+		&& $self->{map_rounds} >= int($self->{mp_maxrounds} / 2);
 	my $half_by_time = $self->{mp_timelimit} > 0
 		&& time() - $self->{map_started} >= ($self->{mp_timelimit} * 30);
 	return if !$half_by_rounds && !$half_by_time;
@@ -1054,12 +1084,17 @@ sub archive_completed_map_team_results
 	my ($self, $completed_map) = @_;
 	my $rounds = $self->{map_ct_wins} + $self->{map_ts_wins};
 	return 0 if !$completed_map || $self->{map_started} <= 0 || $rounds < 10;
+	my $eligible_rounds = $self->{ba_eligible_ct_rounds} + $self->{ba_eligible_ts_rounds};
+	my $eligible = $self->{mp_halftime} && $self->{ba_halftime_rotated}
+		&& $eligible_rounds >= 10;
+	my $ct_rounds = $eligible ? $self->{ba_eligible_ct_rounds} : $self->{map_ct_wins};
+	my $ts_rounds = $eligible ? $self->{ba_eligible_ts_rounds} : $self->{map_ts_wins};
 
 	my $query = sprintf(
 		"INSERT IGNORE INTO hlstats_MapTeamBalanceMatches " .
-		"(serverId, map, mapStarted, ct_rounds, ts_rounds) VALUES (%d, '%s', %d, %d, %d)",
+		"(serverId, map, mapStarted, ct_rounds, ts_rounds, eligible) VALUES (%d, '%s', %d, %d, %d, %d)",
 		$self->{id}, &::quoteSQL($completed_map), $self->{map_started},
-		$self->{map_ct_wins}, $self->{map_ts_wins},
+		$ct_rounds, $ts_rounds, $eligible ? 1 : 0,
 	);
 	my $stored = eval { &::execNonQuery($query); 1 };
 	if (!$stored && !$self->{ba_map_bias_storage_warning}) {
@@ -1073,11 +1108,12 @@ sub get_map_team_bias
 {
 	my ($self) = @_;
 	my $no_bias = { active => 0, ct_rate => 0.5, ts_rate => 0.5, rounds => 0 };
+	return $no_bias if !$self->{mp_halftime};
 	my $result = eval {
 		&::execCached(
 			"get_map_team_balance_matches",
-			"SELECT COALESCE(SUM(ct_rounds), 0), COALESCE(SUM(ts_rounds), 0) " .
-			"FROM hlstats_MapTeamBalanceMatches WHERE serverId=? AND map=? " .
+			"SELECT COALESCE(SUM(ct_rounds), 0), COALESCE(SUM(ts_rounds), 0), COUNT(DISTINCT mapStarted) " .
+			"FROM hlstats_MapTeamBalanceMatches WHERE serverId=? AND map=? AND eligible=1 " .
 			"AND ct_rounds + ts_rounds >= 10",
 			$self->{id}, $self->{map},
 		);
@@ -1089,15 +1125,15 @@ sub get_map_team_bias
 		}
 		return $no_bias;
 	}
-	my ($ct_rounds, $ts_rounds) = $result->fetchrow_array();
+	my ($ct_rounds, $ts_rounds, $matches) = $result->fetchrow_array();
 	$ct_rounds ||= 0;
 	$ts_rounds ||= 0;
 	my $rounds = $ct_rounds + $ts_rounds;
-	return $no_bias if $rounds < 60;
+	return $no_bias if $rounds < 100 || !$matches || $matches < 5;
 
 	my $ct_rate = $ct_rounds / $rounds;
 	my $ts_rate = $ts_rounds / $rounds;
-	return $no_bias if abs($ct_rate - 0.5) < 0.10;
+	return $no_bias if abs($ct_rate - 0.5) < 0.15;
 
 	return {
 		active => 1,
@@ -1153,6 +1189,9 @@ sub add_round_winner
 	$self->increment("map_rounds");
 	$self->increment("rounds");
 	$self->increment("total_rounds");
+	if ($self->map_bias_round_is_eligible()) {
+		$self->increment($team eq "ct" ? "ba_eligible_ct_rounds" : "ba_eligible_ts_rounds");
+	}
 
 	my $analyze_rounds = $self->{balance_analyze_rounds};
 	$analyze_rounds = 7 if !defined($analyze_rounds) || $analyze_rounds !~ /^\d+$/ || $analyze_rounds < 1;
@@ -1160,6 +1199,23 @@ sub add_round_winner
 	$self->{winner}[$index] = $team;
 	$self->{ba_round_orientation}[$index] = $self->{ba_halftime_rotated} ? 1 : 0;
 	$self->recount_balance_wins();
+}
+
+sub map_bias_round_is_eligible
+{
+	my ($self) = @_;
+	my ($ct_humans, $ts_humans, $bots) = (0, 0, 0);
+	for my $player (values %{$self->{srv_players}}) {
+		if ($player->{is_bot}) {
+			$bots++ if ($player->{team} // "") eq "CT"
+				|| ($player->{team} // "") eq "TERRORIST";
+			next;
+		}
+		$ct_humans++ if ($player->{team} // "") eq "CT";
+		$ts_humans++ if ($player->{team} // "") eq "TERRORIST";
+	}
+	return !$bots && $ct_humans + $ts_humans >= $self->{minplayers}
+		&& $ct_humans >= 2 && $ts_humans >= 2;
 }
 
 sub switch_player
@@ -1180,6 +1236,98 @@ sub switch_player
 	# 	$self->dorcon(sprintf("%s %s",$self->{player_admin_command}, $self->quoteparam("HLstatsX:CE - $name was switched to balance teams")));
 	# }
 	return 1;
+}
+
+sub update_player_kd_cache
+{
+	my ($self, $player) = @_;
+	return 0 if !$player || $self->{play_game} != CSS()
+		|| $player->{is_bot} || $player->{userid} <= 0;
+
+	my $uniqueid = $player->{uniqueid} // "";
+	return 0 if $uniqueid !~ /^(?:STEAM_[0-5]:[01]:\d+|\[U:\d+:\d+\])$/i;
+
+	return 0 if !$self->join_team_control_enabled();
+
+	my $kills = $player->{total_kills} || 0;
+	my $deaths = $player->{lifetime_deaths} || 0;
+	return 0 if $kills !~ /^\d+$/ || $deaths !~ /^\d+$/;
+	my $kd = $kills / ($deaths > 0 ? $deaths : 1);
+	my $command = sprintf('sm_kd_set "%s" "%.3f" "21600"', $uniqueid, $kd);
+	return defined($self->dorcon($command)) ? 1 : 0;
+}
+
+sub join_team_control_enabled
+{
+	my ($self) = @_;
+	if (time() - $self->{jtc_enabled_checked_at} >= 30) {
+		my $result = $self->dorcon("jtc_enabled");
+		$self->{jtc_enabled_cached} = defined($result)
+			&& $result =~ /"jtc_enabled"\s*=\s*"1"/ ? 1 : 0;
+		$self->{jtc_enabled_checked_at} = time();
+	}
+	return $self->{jtc_enabled_cached};
+}
+
+sub join_team_kd_threshold
+{
+	my ($self) = @_;
+	if (time() - $self->{jtc_threshold_checked_at} >= 30) {
+		my $result = $self->dorcon("jtc_kd_threshold");
+		if (defined($result) && $result =~ /jtc_kd_threshold[^\r\n]*?=\s*"?([0-9]+(?:\.[0-9]+)?)/i) {
+			$self->{jtc_threshold_cached} = $1 + 0;
+		}
+		$self->{jtc_threshold_checked_at} = time();
+	}
+	return $self->{jtc_threshold_cached};
+}
+
+sub get_join_team_policy
+{
+	my ($self, $player) = @_;
+	my $no_policy = { preferred_team => 0, kd_locked => 0 };
+	return $no_policy if !$player || $self->{play_game} != CSS()
+		|| $player->{is_bot} || $player->{userid} <= 0
+		|| !$self->join_team_control_enabled();
+
+	my $uniqueid = $player->{uniqueid} // "";
+	return $no_policy if $uniqueid !~ /^(?:STEAM_[0-5]:[01]:\d+|\[U:\d+:\d+\])$/i;
+
+	my $kills = $player->{total_kills} || 0;
+	my $deaths = $player->{lifetime_deaths} || 0;
+	return $no_policy if $kills !~ /^\d+$/ || $deaths !~ /^\d+$/;
+	my $kd = $kills / ($deaths > 0 ? $deaths : 1);
+	return $no_policy if $kd < $self->join_team_kd_threshold();
+
+	my ($ct_count, $ts_count) = (0, 0);
+	for my $other (values %{$self->{srv_players}}) {
+		next if $other->{userid} == $player->{userid}
+			|| ($other->{uniqueid} // "") eq $uniqueid;
+		if (($other->{team} // "") eq "CT") {
+			$ct_count++;
+		} elsif (($other->{team} // "") eq "TERRORIST") {
+			$ts_count++;
+		}
+	}
+
+	my $preferred_team;
+	if ($ts_count < $ct_count) {
+		$preferred_team = 2;
+	} elsif ($ct_count < $ts_count) {
+		$preferred_team = 3;
+	} elsif (($self->{map_ts_wins} || 0) < ($self->{map_ct_wins} || 0)) {
+		$preferred_team = 2;
+	} elsif (($self->{map_ct_wins} || 0) < ($self->{map_ts_wins} || 0)) {
+		$preferred_team = 3;
+	} elsif (($player->{team} // "") eq "TERRORIST") {
+		$preferred_team = 2;
+	} elsif (($player->{team} // "") eq "CT") {
+		$preferred_team = 3;
+	} else {
+		$preferred_team = (int(rand(2)) == 0) ? 2 : 3;
+	}
+
+	return { preferred_team => $preferred_team, kd_locked => 1 };
 }
 
 sub debug_message
@@ -1262,6 +1410,7 @@ sub analyze_teams
 	$self->messageAll("HLstatsX:CE - ATB - Checking Teams", 0, 1);
 
 	my $action_done = 0;
+	my $bot_fill_mode = $self->is_bot_fill_mode();
 	# At or below the configured population threshold only correct team counts;
 	# do not use round score to choose the players being moved.
 	my $can_balance_by_score = $self->{num_trackable_players} > $self->{minplayers};
@@ -1288,20 +1437,44 @@ sub analyze_teams
 	if ($ct_count + 1 < $ts_count) {
 		$needed_players = floor( ($ts_count - $ct_count) / 2);
 		if ($can_balance_by_score && $ct_underperforming) {
-			@possible_players = sort { $b->[6] <=> $a->[6]} @ts_players;  # best player
+			my @bots = $bot_fill_mode ? grep { $_->[9] } @ts_players : ();
+			my @humans = $bot_fill_mode ? grep { !$_->[9] } @ts_players : @ts_players;
+			@possible_players = (
+				sort { $a->[6] <=> $b->[6] } @bots,
+				sort { $b->[6] <=> $a->[6] } @humans,
+			); # prefer a fill bot before moving a strong human
 			$count_as_skill_balance = 1;
 		} else {
-			@possible_players = sort { $a->[6] <=> $b->[6]} @ts_players;  # worst player
-			shift(@possible_players);  # remove absolutely worst
+			if ($bot_fill_mode) {
+				my @bots = sort { $a->[6] <=> $b->[6] } grep { $_->[9] } @ts_players;
+				my @humans = sort { $a->[6] <=> $b->[6] } grep { !$_->[9] } @ts_players;
+				@possible_players = (@bots, @humans);
+				shift(@possible_players) if !@bots; # retain the legacy human-protection rule
+			} else {
+				@possible_players = sort { $a->[6] <=> $b->[6]} @ts_players;
+				shift(@possible_players);
+			}
 		}
 	} elsif ($ts_count + 1 < $ct_count) {
 		$needed_players = floor( ($ct_count - $ts_count) / 2);
 		if ($can_balance_by_score && $ts_underperforming) {
-			@possible_players = sort { $b->[6] <=> $a->[6]} @ct_players;  # best player
+			my @bots = $bot_fill_mode ? grep { $_->[9] } @ct_players : ();
+			my @humans = $bot_fill_mode ? grep { !$_->[9] } @ct_players : @ct_players;
+			@possible_players = (
+				sort { $a->[6] <=> $b->[6] } @bots,
+				sort { $b->[6] <=> $a->[6] } @humans,
+			);
 			$count_as_skill_balance = 1;
 		} else {
-			@possible_players = sort { $a->[6] <=> $b->[6]} @ct_players;  # worst player
-			shift(@possible_players); # remove absolutely worst
+			if ($bot_fill_mode) {
+				my @bots = sort { $a->[6] <=> $b->[6] } grep { $_->[9] } @ct_players;
+				my @humans = sort { $a->[6] <=> $b->[6] } grep { !$_->[9] } @ct_players;
+				@possible_players = (@bots, @humans);
+				shift(@possible_players) if !@bots;
+			} else {
+				@possible_players = sort { $a->[6] <=> $b->[6]} @ct_players;
+				shift(@possible_players);
+			}
 		}
 	}
 
@@ -1318,7 +1491,9 @@ sub analyze_teams
 			next;
 		}
 		$self->messageAll("HLstatsX:CE - ATB - Player [" . @{$entry}[3] . "] " . @{$entry}[0] . " was switched to ensure an even team count.", 0, 1);
-		if ($self->request_balance_player_swap($entry, $count_as_skill_balance)) {
+		if ($self->request_balance_player_swap(
+			$entry, $count_as_skill_balance && !$entry->[9]
+		)) {
 			$action_done++;
 			$needed_players--;
 		}
@@ -1358,6 +1533,7 @@ sub analyze_teams
 	foreach my $entry (@ct_players) {
 		if ($self->balance_player_was_swapped($entry)
 			|| $self->balance_player_swap_pending($entry)
+			|| ($bot_fill_mode && $entry->[9])
 			|| (@{$entry}[7] == 0 && $self->{balance_switch_only_dead})
 			|| ($self->is_admin(@{$entry}[1]) == 1 && !$self->{switch_admins})) {
 			next;
@@ -1370,6 +1546,7 @@ sub analyze_teams
 	foreach my $entry (@ts_players) {
 		if ($self->balance_player_was_swapped($entry)
 			|| $self->balance_player_swap_pending($entry)
+			|| ($bot_fill_mode && $entry->[9])
 			|| (@{$entry}[7] == 0 && $self->{balance_switch_only_dead})
 			|| ($self->is_admin(@{$entry}[1]) == 1 && !$self->{switch_admins})) {
 			next;

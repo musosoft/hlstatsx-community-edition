@@ -2970,6 +2970,20 @@ while ($loop = &getLine()) {
 					);
 				}
 			}
+		} elsif ($s_output =~ /^"(.+?(?:<.+?>)*?)" api_request "joinpolicy" \(value "(.+?)?"\)$/) {
+
+			$ev_player = $1;
+			$ev_queryId = $2;
+
+			if ($ev_queryId) {
+				my $playerinfo = &getPlayerInfo($ev_player, 1);
+				if ($playerinfo) {
+					$ev_type = 102;
+					$ev_status = &doEvent_ApiRequestJoinPolicy(
+						$playerinfo->{"userid"}, $playerinfo->{"uniqueid"}, $ev_queryId
+					);
+				}
+			}
 		} elsif ($s_output =~ /^"(.+?(?:<.+?>)*?)" api_request "playerinfo" \(value "(.+?)?"\)$/) {
 
 			$ev_player = $1;

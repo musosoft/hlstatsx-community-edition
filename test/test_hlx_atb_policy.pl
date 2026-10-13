@@ -33,6 +33,14 @@ sub main::quoteSQL {
 }
 
 {
+	package TestMapRules;
+	sub execute { return '"bot_quota_mode" = "normal"'; }
+	sub getMaxRounds { return $_[0]->{rounds}; }
+	sub getTimeLimit { return $_[0]->{timelimit}; }
+	sub getHalfTime { return $_[0]->{halftime}; }
+}
+
+{
 	package TestStatement;
 	sub fetchrow_array { return @{$_[0]->{row}}; }
 }
@@ -70,11 +78,17 @@ sub new_server {
 		ba_enabled => 1,
 		rcon => "test",
 		rcon_obj => bless({}, "TestRcon"),
+		minplayers => 4,
+		num_trackable_players => 0,
 		maxplayers => 32,
 		srv_players => {},
 		ba_swapped_players => {},
 		ba_pending_swaps => {},
 		ba_round_orientation => [],
+		ba_eligible_ct_rounds => 0,
+		ba_eligible_ts_rounds => 0,
+		ba_fill_roster_signature => undef,
+		ba_fill_roster_stable_since => 0,
 		ba_balance_pending => 0,
 		ba_balance_due => 0,
 		ba_balance_deadline => 0,
@@ -133,23 +147,105 @@ is($server->apply_team_balance_config_defaults({ BalanceAnalyzeRounds => "0" })-
 	"non-positive analysis window falls back instead of causing modulo by zero");
 {
 	no warnings qw(redefine once);
+	my @commands;
+	local *HLstats_Server::dorcon = sub {
+		my ($self, $command) = @_;
+		push @commands, $command;
+		return '"jtc_enabled" = "1"' if $command eq "jtc_enabled";
+		return "ok";
+	};
+	$server->{play_game} = 0; # CSS() constant
+	my $player = {
+		uniqueid => "STEAM_0:1:42",
+		userid => 7,
+		is_bot => 0,
+		total_kills => 44,
+		lifetime_deaths => 22,
+	};
+	ok($server->update_player_kd_cache($player),
+		"HLstatsX publishes a human's persistent KD when join-team control is enabled");
+	like($commands[-1], qr/^sm_kd_set "STEAM_0:1:42" "2\.000" "21600"$/,
+		"the cache receives lifetime KD, Steam identity, and a bounded six-hour TTL");
+	$player->{total_kills} = 9;
+	$player->{lifetime_deaths} = 0;
+	ok($server->update_player_kd_cache($player),
+		"zero lifetime deaths use a denominator of one rather than erasing a strong KD");
+	like($commands[-1], qr/"9\.000"/, "zero-death KD remains eligible for the join lock");
+	$player->{is_bot} = 1;
+	my $commands_before_bot = scalar @commands;
+	ok(!$server->update_player_kd_cache($player) && scalar @commands == $commands_before_bot,
+		"bots never receive player KD cache entries");
+	$player->{is_bot} = 0;
+	$player->{uniqueid} = 'invalid";sm_fake_command';
+	my $commands_before_invalid = scalar @commands;
+	ok(!$server->update_player_kd_cache($player) && scalar @commands == $commands_before_invalid,
+		"untrusted identifiers cannot be injected into the KD RCON command");
+}
+{
+	no warnings qw(redefine once);
+	local *HLstats_Server::dorcon = sub {
+		my ($self, $command) = @_;
+		return '"jtc_enabled" = "1"' if $command eq "jtc_enabled";
+		return '"jtc_kd_threshold" = "2.0"' if $command eq "jtc_kd_threshold";
+		return "";
+	};
+	$server->{play_game} = 0;
+	$server->{jtc_enabled_checked_at} = 0;
+	$server->{jtc_threshold_checked_at} = 0;
+	$server->{map_ct_wins} = 4;
+	$server->{map_ts_wins} = 8;
+	my $joiner = {
+		uniqueid => "STEAM_0:1:42", userid => 7, is_bot => 0,
+		total_kills => 44, lifetime_deaths => 22, team => "TERRORIST",
+	};
+	$server->{srv_players} = {
+		7 => $joiner,
+		8 => { uniqueid => "STEAM_0:0:1", userid => 8, is_bot => 0, team => "CT" },
+		9 => { uniqueid => "BOT", userid => 9, is_bot => 1, team => "TERRORIST" },
+		10 => { uniqueid => "STEAM_0:0:2", userid => 10, is_bot => 0, team => "CT" },
+	};
+	my $policy = $server->get_join_team_policy($joiner);
+	is_deeply($policy, { preferred_team => 2, kd_locked => 1 },
+		"backend prefers the smaller team for a qualifying player, excluding that player from counts");
+	$joiner->{total_kills} = 20;
+	$joiner->{lifetime_deaths} = 20;
+	$server->{jtc_enabled_checked_at} = 0;
+	$policy = $server->get_join_team_policy($joiner);
+	is_deeply($policy, { preferred_team => 0, kd_locked => 0 },
+		"backend returns no restriction when lifetime KD is below the configured threshold");
+}
+{
+	no warnings qw(redefine once);
 	local *HLstats_Server::get_map_team_bias = $real_get_map_team_bias;
 	local *main::execCached = sub {
-		return bless { row => [48, 12] }, "TestStatement";
+		return bless { row => [80, 20, 5] }, "TestStatement";
 	};
 	my $bias = $server->get_map_team_bias();
-	ok($bias->{active} && $bias->{rounds} == 60 && $bias->{ct_rate} == 0.8,
-		"per-map side bias activates at a 60-round sample");
+	ok($bias->{active} && $bias->{rounds} == 100 && $bias->{ct_rate} == 0.8,
+		"strong side bias activates only after 100 eligible rounds across five matches");
 	local *main::execCached = sub {
-		return bless { row => [35, 25] }, "TestStatement";
+		return bless { row => [80, 20, 4] }, "TestStatement";
+	};
+	$bias = $server->get_map_team_bias();
+	ok(!$bias->{active}, "four eligible matches are insufficient to activate map bias");
+	local *main::execCached = sub {
+		return bless { row => [58, 42, 5] }, "TestStatement";
 	};
 	$bias = $server->get_map_team_bias();
 	ok(!$bias->{active}, "small side-rate differences do not create an over-map bias");
 	local *main::execCached = sub {
-		return bless { row => [30, 29] }, "TestStatement";
+		return bless { row => [30, 29, 5] }, "TestStatement";
 	};
 	$bias = $server->get_map_team_bias();
-	ok(!$bias->{active}, "map bias waits until at least 60 completed rounds");
+	ok(!$bias->{active}, "map bias waits until at least 100 eligible rounds");
+}
+{
+	no warnings qw(redefine once);
+	local *HLstats_Server::get_map_team_bias = $real_get_map_team_bias;
+	local *main::execCached = sub { die "non-halftime maps must not query or apply map bias" };
+	$server->{mp_halftime} = 0;
+	my $bias = $server->get_map_team_bias();
+	ok(!$bias->{active}, "maps without halftime never apply learned side bias");
 }
 {
 	no warnings qw(redefine once);
@@ -159,15 +255,27 @@ is($server->apply_team_balance_config_defaults({ BalanceAnalyzeRounds => "0" })-
 	$server->{map_started} = 1234;
 	$server->{map_ct_wins} = 8;
 	$server->{map_ts_wins} = 4;
+	$server->{mp_halftime} = 1;
+	$server->{ba_halftime_rotated} = 1;
+	$server->{ba_eligible_ct_rounds} = 7;
+	$server->{ba_eligible_ts_rounds} = 4;
 	ok($server->archive_completed_map_team_results("de_train"),
-		"completed map-side results are archived");
-	like($archive_queries[0], qr/\(7, 'de_train', 1234, 8, 4\)/,
-		"map-side archive stores server, map, match start, and both side counts");
+		"completed halftime map with enough human rounds is archived");
+	like($archive_queries[0], qr/\(7, 'de_train', 1234, 7, 4, 1\)/,
+		"eligible archive stores only human-qualified rounds and marks the match eligible");
+	$server->{map_started} = 1235;
+	$server->{mp_halftime} = 0;
+	$server->{map_ct_wins} = 8;
+	$server->{map_ts_wins} = 4;
+	ok($server->archive_completed_map_team_results("aim_mirror"),
+		"non-halftime map totals remain available for audit");
+	like($archive_queries[1], qr/\(7, 'aim_mirror', 1235, 8, 4, 0\)/,
+		"non-halftime map is preserved but explicitly excluded from learning");
 	$server->{map_ct_wins} = 5;
 	$server->{map_ts_wins} = 4;
 	ok(!$server->archive_completed_map_team_results("de_train"),
 		"very short map sessions are not added to the side-bias history");
-	is(scalar @archive_queries, 1, "short map sessions do not write archive rows");
+	is(scalar @archive_queries, 2, "short map sessions do not write archive rows");
 }
 
 $server = new_server();
@@ -201,8 +309,11 @@ $server->schedule_team_balance(1000);
 	ok(!$server->{test_analyze_count},
 		"a delayed round-start bot kick cannot be preceded by an early swap decision");
 	$server->run_pending_team_balance(1015);
+	ok(!$server->{test_analyze_count},
+		"a stable-looking roster is observed for the full settling window");
+	$server->run_pending_team_balance(1018);
 	is($server->{test_analyze_count}, 1,
-		"the roster is analyzed after the fill reconciliation window");
+		"the roster is analyzed after bot fill and team assignments settle");
 }
 
 my @roster = (
@@ -211,13 +322,21 @@ my @roster = (
 );
 my %roster_hash = map { ("player$_", $roster[$_]) } 0 .. $#roster;
 $server->{srv_players} = \%roster_hash;
-ok(!$server->bot_fill_roster_is_changing(),
-	"one human plus five bots satisfies bot_quota 6 fill mode");
+ok($server->bot_fill_roster_is_changing(100),
+	"the first fill roster observation starts the settling window");
+ok($server->bot_fill_roster_is_changing(102),
+	"the fill roster is not treated as stable too early");
+ok(!$server->bot_fill_roster_is_changing(104),
+	"a stable observed roster settles even if bot_quota is not a reliable team-count target");
 my ($joining_bot) = grep { $_->{is_bot} } @roster;
 $joining_bot->{team} = "Unassigned";
-ok($server->bot_fill_roster_is_changing(),
+ok($server->bot_fill_roster_is_changing(105),
 	"a connected fill bot remains unsettled until it joins a team");
 $joining_bot->{team} = "TERRORIST";
+ok($server->bot_fill_roster_is_changing(106),
+	"a newly assigned fill bot restarts the settling window");
+ok(!$server->bot_fill_roster_is_changing(109),
+	"the assigned roster settles after remaining unchanged");
 {
 	no warnings qw(redefine once);
 	local *HLstats_Server::analyze_teams = sub { $_[0]->{test_analyze_count}++ };
@@ -230,8 +349,10 @@ $joining_bot->{team} = "TERRORIST";
 	$server->{ba_balance_deadline} = $waiting_due + 2;
 	$server->{srv_players} = {};
 	$server->run_pending_team_balance($server->{ba_balance_due});
-	ok(!$server->{ba_balance_pending}, "deadline prevents a missing bot from blocking ATB forever");
-	is($server->{test_analyze_count}, 2, "deadline fallback runs one final balance check");
+	ok($server->{ba_balance_pending}, "the old deadline cannot force a correction after a roster change");
+	$server->run_pending_team_balance($server->{ba_balance_due} + 3);
+	ok(!$server->{ba_balance_pending}, "a stable observed roster releases the deferred check");
+	is($server->{test_analyze_count}, 2, "stable fill state is analyzed exactly once");
 }
 pop @roster;
 %roster_hash = map { ("player$_", $roster[$_]) } 0 .. $#roster;
@@ -254,10 +375,12 @@ is($server->{ba_balance_deadline}, $hard_deadline,
 	local *HLstats_Server::analyze_teams = sub { $_[0]->{test_analyze_count}++ };
 	$server->{ba_balance_due} = $hard_deadline;
 	$server->run_pending_team_balance($hard_deadline);
-	ok(!$server->{ba_balance_pending},
-		"hard deadline wins over a just-observed roster change");
+	ok($server->{ba_balance_pending},
+		"a hard deadline cannot force a swap while bot fill is changing");
+	$server->run_pending_team_balance($server->{ba_balance_due} + 3);
+	ok(!$server->{ba_balance_pending}, "the check runs after the roster stabilizes");
 	is($server->{test_analyze_count}, 1,
-		"deadline performs exactly one final analysis");
+		"stable fill state performs exactly one final analysis");
 }
 {
 	no warnings qw(redefine once);
@@ -275,6 +398,34 @@ is_deeply($server->{winner}, ["ts", "ts", "ct", ""],
 is($server->{ba_ct_wins}, 1, "halftime CT win count is recalculated");
 is($server->{ba_ts_wins}, 2, "halftime T win count is recalculated");
 ok($server->{ba_halftime_rotated}, "halftime history rotates only once");
+
+$server = new_server();
+$server->{mp_maxrounds} = 25;
+$server->{mp_timelimit} = 30;
+$server->{mp_halftime} = 1;
+$server->{map_rounds} = 12;
+$server->{rcon_obj} = bless {
+	rounds => 0,
+	timelimit => 0,
+	halftime => 0,
+}, "TestMapRules";
+ok($server->refresh_map_balance_rules(), "map-specific balance cvars refresh at map load");
+is_deeply(
+	[$server->{mp_maxrounds}, $server->{mp_timelimit}, $server->{mp_halftime}],
+	[0, 0, 0],
+	"zero cvars replace previous-map settings instead of leaking halftime");
+$server->prepare_halftime_balance();
+ok(!$server->{ba_halftime_rotated},
+	"a map that disables halftime cannot inherit the previous map's halftime state");
+$server->{rcon_obj} = bless {
+	rounds => 24,
+	timelimit => 0,
+	halftime => 1,
+}, "TestMapRules";
+ok($server->refresh_map_balance_rules(), "halftime-enabled map rules refresh successfully");
+$server->prepare_halftime_balance();
+ok($server->{ba_halftime_rotated},
+	"a delayed halftime check catches the first round at or past the half threshold");
 $server->{ba_last_swap} = 3;
 $server->{ba_balance_pending} = 1;
 $server->{ba_swapped_players}{"human:old"} = 1;
@@ -288,6 +439,8 @@ is(scalar keys %{$server->{ba_swapped_players}}, 0,
 ok(!$server->{ba_balance_pending}, "map loading cancels a pending balance check");
 is(scalar keys %{$server->{ba_pending_swaps}}, 0,
 	"map loading clears unconfirmed swap requests");
+is($server->{ba_eligible_ct_rounds}, 0,
+	"map loading clears eligible side-bias rounds");
 
 $server = new_server();
 $server->{map_rounds} = 12;
@@ -382,6 +535,30 @@ sub balance_player {
 }
 
 $server = new_server();
+$server->{minplayers} = 4;
+$server->{num_trackable_players} = 5;
+$server->{srv_players} = {
+	ct1 => { is_bot => 0, team => "CT" },
+	ct2 => { is_bot => 0, team => "CT" },
+	ct3 => { is_bot => 0, team => "CT" },
+	t1 => { is_bot => 0, team => "TERRORIST" },
+	t2 => { is_bot => 0, team => "TERRORIST" },
+};
+ok($server->map_bias_round_is_eligible(),
+	"a bot-free round with enough humans on both sides and more than MinPlayers is eligible");
+$server->{srv_players}{bot1} = { is_bot => 1, team => "CT" };
+ok(!$server->map_bias_round_is_eligible(),
+	"rounds involving bots cannot train map-side bias");
+delete $server->{srv_players}{bot1};
+$server->{srv_players}{t2}{is_bot} = 1;
+ok(!$server->map_bias_round_is_eligible(),
+	"bots cannot satisfy the per-side human sample requirement");
+$server->{srv_players}{t2}{is_bot} = 0;
+$server->{minplayers} = 6;
+ok(!$server->map_bias_round_is_eligible(),
+	"map-bias samples do not train below MinPlayers");
+
+$server = new_server();
 $server->{map_rounds} = 1;
 $server->{num_trackable_players} = 1;
 $server->{minplayers} = 6;
@@ -401,6 +578,8 @@ $server->analyze_teams();
 acknowledge_test_swaps($server);
 is(scalar @{$server->{test_switches}}, 2,
 	"low population corrects a 1v5 count imbalance in one pass");
+ok(!(grep { $_ == 1 } @{$server->{test_switches}}),
+	"fill-mode count correction moves bots before humans");
 is(scalar(grep { $_->{team} eq "TERRORIST" } values %{$server->{srv_players}}), 3,
 	"low-population count correction leaves even teams");
 my @switched_players = map {

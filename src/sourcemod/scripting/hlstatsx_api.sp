@@ -15,15 +15,15 @@
 int g_iRequestId = 0;
 ArrayList g_hRequestCallbacks;
 
-enum Api_CallbackData {
-	Id,
-	Float:Time,
-	Client,
-	Handle:Plugin,
-	Function:Function,
-	Payload,
-	Limit
-};
+enum struct ApiCallbackData {
+	int id;
+	float time;
+	int client;
+	Handle plugin;
+	Function callback;
+	int payload;
+	int limit;
+}
 
 public Plugin myinfo = 
 {
@@ -36,9 +36,7 @@ public Plugin myinfo =
 
 public void OnPluginStart()
 {
-    RegServerCmd("hlx_api_response", _Api_Response);
-
-    g_hRequestCallbacks = new ArrayList(7);
+    g_hRequestCallbacks = new ArrayList(sizeof(ApiCallbackData));
 }
 
 public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max)
@@ -46,8 +44,18 @@ public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max
     RegPluginLibrary("hlstatsx_api");
     
     CreateNative("HLStatsX_Api_GetStats", Api_GetStats);
+    CreateNative("HLStatsX_Api_GetJoinPolicy", Api_GetJoinPolicy);
+    CreateNative("HLStatsX_Api_HandleResponse", Api_HandleResponse);
 
     return APLRes_Success;
+}
+
+public int Api_HandleResponse(Handle plugin, int numParams)
+{
+    if (numParams < 1) {
+        return Plugin_Handled;
+    }
+    return _Api_Response(GetNativeCell(1));
 }
 
 public void OnPluginEnd()
@@ -80,19 +88,19 @@ public int Api_GetStats(Handle plugin, int numParams)
     }
 
     int requestId = GetRequestId();
-    int data[Api_CallbackData];
+    ApiCallbackData data;
 
-    data[Id] = requestId;
-    data[Time] = GetGameTime();
-    data[Client] = callbackClient;
-    data[Plugin] = plugin;
-    data[Function] = callbackFunction;
-    data[Payload] = callbackPayload;
-    data[Limit] = callbackLimit;
+    data.id = requestId;
+    data.time = GetGameTime();
+    data.client = callbackClient;
+    data.plugin = plugin;
+    data.callback = callbackFunction;
+    data.payload = callbackPayload;
+    data.limit = callbackLimit;
 
     if (g_hRequestCallbacks != null && g_hRequestCallbacks != INVALID_HANDLE) {
 
-        g_hRequestCallbacks.PushArray(data[0]);
+        g_hRequestCallbacks.PushArray(data, sizeof(data));
 
         char queryPayload[32];
         IntToString(requestId, queryPayload, sizeof(queryPayload));
@@ -103,6 +111,36 @@ public int Api_GetStats(Handle plugin, int numParams)
     }
 
     return false;
+}
+
+public int Api_GetJoinPolicy(Handle plugin, int numParams)
+{
+    if (numParams < 2) {
+        return false;
+    }
+
+    int callbackClient = GetNativeCell(1);
+    Function callbackFunction = GetNativeCell(2);
+    int callbackPayload = numParams >= 3 ? GetNativeCell(3) : 0;
+    if (!IsValidClient(callbackClient) || g_hRequestCallbacks == null) {
+        return false;
+    }
+
+    int requestId = GetRequestId();
+    ApiCallbackData data;
+    data.id = requestId;
+    data.time = GetGameTime();
+    data.client = callbackClient;
+    data.plugin = plugin;
+    data.callback = callbackFunction;
+    data.payload = callbackPayload;
+    data.limit = 1;
+    g_hRequestCallbacks.PushArray(data, sizeof(data));
+
+    char queryPayload[32];
+    IntToString(requestId, queryPayload, sizeof(queryPayload));
+    Api_SendRequest(callbackClient, "api_request", "joinpolicy", queryPayload);
+    return true;
 }
 
 public void Api_SendRequest(int client, char[] verb, const char[] event, const char[] properties)
@@ -179,25 +217,59 @@ public Action _Api_Response(int args)
             // Done, so reset position to start (for other plugins)
             pack.Reset();
 
-            int data[Api_CallbackData];
-            g_hRequestCallbacks.GetArray(requestCallbackIndex, data[0], sizeof(data));
+            ApiCallbackData data;
+            g_hRequestCallbacks.GetArray(requestCallbackIndex, data, sizeof(data));
 
-            if ((data[Plugin] != INVALID_HANDLE) && (data[Function] != INVALID_FUNCTION)) {
+            if ((data.plugin != INVALID_HANDLE) && (data.callback != INVALID_FUNCTION)) {
 
-                Call_StartFunction(data[Plugin], data[Function]);
+                Call_StartFunction(data.plugin, data.callback);
                 Call_PushCell(HLX_CALLBACK_TYPE_PLAYER_INFO);
 
-                Call_PushCell(data[Payload]);
+                Call_PushCell(data.payload);
                 Call_PushCell(client);
 
                 Call_PushCellRef(pack);
                 Call_Finish(view_as<int>(result));
 
-                if (data[Limit] == 1) {
+                if (data.limit == 1) {
                     g_hRequestCallbacks.Erase(requestCallbackIndex);
                 }
             }
 
+            delete pack;
+        }
+
+        case HLX_CALLBACK_TYPE_JOIN_POLICY: {
+            if (args < 5) {
+                return Plugin_Handled;
+            }
+
+            int requestId = GetArgumentParam(2, args);
+            int requestCallbackIndex = FindRequestById(requestId);
+            int userId = GetArgumentParam(3, args);
+            int client = GetClientOfUserId(userId);
+            if (requestCallbackIndex < 0 || !IsValidClient(client)) {
+                return Plugin_Handled;
+            }
+
+            DataPack pack = new DataPack();
+            pack.WriteCell(GetArgumentParam(4, args)); // Preferred team
+            pack.WriteCell(GetArgumentParam(5, args)); // KD lock enabled
+            pack.Reset();
+
+            ApiCallbackData data;
+            g_hRequestCallbacks.GetArray(requestCallbackIndex, data, sizeof(data));
+            if (data.plugin != INVALID_HANDLE && data.callback != INVALID_FUNCTION) {
+                Action result;
+                Call_StartFunction(data.plugin, data.callback);
+                Call_PushCell(HLX_CALLBACK_TYPE_JOIN_POLICY);
+                Call_PushCell(data.payload);
+                Call_PushCell(client);
+                Call_PushCellRef(pack);
+                Call_Finish(view_as<int>(result));
+            }
+
+            g_hRequestCallbacks.Erase(requestCallbackIndex);
             delete pack;
         }
     }
@@ -241,10 +313,10 @@ public int FindRequestById(int requestId)
 
     for (int i = 0; i < size; i++) {
 
-        int data[Api_CallbackData];
-        g_hRequestCallbacks.GetArray(i, data[0], sizeof(data));
+        ApiCallbackData data;
+        g_hRequestCallbacks.GetArray(i, data, sizeof(data));
 
-        if (data[Id] == requestId && (data[Plugin] != INVALID_HANDLE) && (data[Function] != INVALID_FUNCTION)) {
+        if (data.id == requestId && data.plugin != INVALID_HANDLE && data.callback != INVALID_FUNCTION) {
 
             index = i;
             break;
