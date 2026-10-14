@@ -47,7 +47,7 @@ do "$::opt_libdir/HLstats_GameConstants.plib";
 
 sub new
 {
-	my ($class_name, $serverId, $address, $port, $server_name, $rcon_pass, $game, $publicaddress, $gameengine, $realgame, $maxplayers, $mp_maxrounds, $mp_timelimit, $mp_halftime) = @_;
+	my ($class_name, $serverId, $address, $port, $server_name, $rcon_pass, $game, $publicaddress, $gameengine, $realgame, $maxplayers, $mp_maxrounds, $mp_timelimit, $mp_halftime, $map, $map_started) = @_;
 	
 	my ($self) = {};
 	
@@ -78,7 +78,7 @@ sub new
 	$self->{last_check}     = 0;
     
 	$self->{lines}         = 0;
-	$self->{map}           = "";
+	$self->{map}           = $map || "";
 	$self->{numplayers}    = 0;
 	$self->{num_trackable_players} = 0;
 	$self->{minplayers}    = 6;
@@ -101,7 +101,7 @@ sub new
 	$self->{bombs_defused} = 0;
 	$self->{ct_wins}       = 0;
 	$self->{ts_wins}       = 0; 
-	$self->{map_started}   = time();
+	$self->{map_started}   = $map_started || time();
 	$self->{map_changes}   = 0;
 	$self->{map_rounds}    = 0;
 	$self->{map_ct_wins}   = 0;
@@ -123,7 +123,11 @@ sub new
 	$self->{ba_player_switch} = 0;  # player switched on his own
 	$self->{ba_swapped_players} = {};
 	$self->{ba_pending_swaps} = {};
+	$self->{ba_swap_history_loaded} = 0;
+	$self->{ba_swap_history_warning} = 0;
 	$self->{ba_round_orientation} = [];
+	$self->{ba_round_bias_active} = 0;
+	$self->{ba_round_bias_eligible} = 0;
 	$self->{ba_eligible_ct_rounds} = 0;
 	$self->{ba_eligible_ts_rounds} = 0;
 	$self->{ba_fill_roster_signature} = undef;
@@ -887,6 +891,7 @@ sub reset_team_balance
 	$self->{ba_player_switch} = 0;
 	$self->{ba_swapped_players} = {};
 	$self->{ba_pending_swaps} = {};
+	$self->{ba_swap_history_loaded} = 1;
 	$self->{ba_round_orientation} = [];
 	$self->{ba_eligible_ct_rounds} = 0;
 	$self->{ba_eligible_ts_rounds} = 0;
@@ -897,7 +902,45 @@ sub reset_team_balance
 	$self->{ba_balance_deadline} = 0;
 	$self->{ba_roster_changed_at} = 0;
 	$self->{ba_halftime_rotated} = 0;
+	$self->{ba_round_bias_active} = 0;
+	$self->{ba_round_bias_eligible} = 0;
 	$self->{map_rounds} = 0;
+}
+
+sub load_balance_swap_history
+{
+	my ($self) = @_;
+	$self->{ba_swapped_players} = {};
+	$self->{ba_swap_history_loaded} = 0;
+	return 0 if !$self->{map_started} || !$self->{id} || !$self->{map};
+
+	my $result = eval {
+		&::execCached(
+			"get_map_team_balance_swaps",
+			"SELECT uniqueId FROM hlstats_MapTeamBalanceSwaps WHERE serverId=? AND map=? AND mapStarted=?",
+			$self->{id}, $self->{map}, $self->{map_started},
+		);
+	};
+	if (!$result) {
+		if (!$self->{ba_swap_history_warning}) {
+			&::printEvent("TEAMS", "ATB swap history unavailable; human swaps are paused for safety", 1);
+			$self->{ba_swap_history_warning} = 1;
+		}
+		return 0;
+	}
+
+	while (my ($uniqueid) = $result->fetchrow_array()) {
+		$self->{ba_swapped_players}{"human:$uniqueid"} = 1 if defined($uniqueid) && $uniqueid ne "";
+	}
+	my $fetch_error = $result->err;
+	my $finished = $result->finish;
+	if ($fetch_error || !$finished) {
+		$self->{ba_swapped_players} = {};
+		return 0;
+	}
+
+	$self->{ba_swap_history_loaded} = 1;
+	return 1;
 }
 
 sub schedule_team_balance
@@ -926,6 +969,8 @@ sub note_balance_roster_change
 {
 	my ($self, $now) = @_;
 	$now = time() if !defined($now);
+	# Disqualify the current round if its roster changes after Round_Start.
+	$self->{ba_round_bias_eligible} = 0 if $self->{ba_round_bias_active};
 	$self->{ba_roster_changed_at} = $now;
 	if ($self->{ba_balance_pending}) {
 		my $new_due = $now + 2;
@@ -1038,8 +1083,32 @@ sub confirm_balance_player_swap
 	}
 	delete $self->{ba_pending_swaps}{$key};
 	$self->{ba_swapped_players}{$key} = 1;
+	$self->persist_balance_player_swap($player) if !$player->{is_bot};
 	$self->{ba_last_swap} = $self->{balance_rounds_delay}
 		if $pending->{counts_as_skill_balance};
+	return 1;
+}
+
+sub persist_balance_player_swap
+{
+	my ($self, $player) = @_;
+	my $uniqueid = $player->{uniqueid} // "";
+	return 0 if $uniqueid eq "" || !$self->{map_started} || !$self->{map};
+	my $query = sprintf(
+		"INSERT IGNORE INTO hlstats_MapTeamBalanceSwaps " .
+		"(serverId, map, mapStarted, uniqueId, swappedAt) VALUES (%d, '%s', %d, '%s', %d)",
+		$self->{id}, &::quoteSQL($self->{map}), $self->{map_started},
+		&::quoteSQL($uniqueid), time(),
+	);
+	my $stored = eval { defined(&::execNonQuery($query)) };
+	if (!$stored) {
+		$self->{ba_swap_history_loaded} = 0;
+		if (!$self->{ba_swap_history_warning}) {
+			&::printEvent("TEAMS", "ATB swap history could not be saved; human swaps are paused for safety", 1);
+			$self->{ba_swap_history_warning} = 1;
+		}
+		return 0;
+	}
 	return 1;
 }
 
@@ -1056,7 +1125,15 @@ sub balance_player_was_swapped
 {
 	my ($self, $entry) = @_;
 	my $key = $entry->[9] ? "bot:$entry->[8]" : "human:$entry->[1]";
+	return 1 if !$entry->[9] && !$self->{ba_swap_history_loaded};
 	return $self->{ba_swapped_players}{$key} || 0;
+}
+
+sub begin_map_bias_round
+{
+	my ($self) = @_;
+	$self->{ba_round_bias_active} = 1;
+	$self->{ba_round_bias_eligible} = $self->map_bias_round_is_eligible() ? 1 : 0;
 }
 
 sub prepare_halftime_balance
@@ -1189,9 +1266,11 @@ sub add_round_winner
 	$self->increment("map_rounds");
 	$self->increment("rounds");
 	$self->increment("total_rounds");
-	if ($self->map_bias_round_is_eligible()) {
+	if ($self->{ba_round_bias_active} && $self->{ba_round_bias_eligible}) {
 		$self->increment($team eq "ct" ? "ba_eligible_ct_rounds" : "ba_eligible_ts_rounds");
 	}
+	$self->{ba_round_bias_active} = 0;
+	$self->{ba_round_bias_eligible} = 0;
 
 	my $analyze_rounds = $self->{balance_analyze_rounds};
 	$analyze_rounds = 7 if !defined($analyze_rounds) || $analyze_rounds !~ /^\d+$/ || $analyze_rounds < 1;
@@ -1406,8 +1485,6 @@ sub analyze_teams
 	&::printEvent("TEAM", "Checking Teams", 1);
 
 	$self->debug_message("HLstatsX:CE - ATB: CT ($ct_count) $ct_kills:$ct_deaths  [$ct_wins - $ts_wins] $ts_kills:$ts_deaths ($ts_count) TS");
-
-	$self->messageAll("HLstatsX:CE - ATB - Checking Teams", 0, 1);
 
 	my $action_done = 0;
 	my $bot_fill_mode = $self->is_bot_fill_mode();

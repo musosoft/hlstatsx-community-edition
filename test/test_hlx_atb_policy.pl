@@ -43,6 +43,20 @@ sub main::quoteSQL {
 {
 	package TestStatement;
 	sub fetchrow_array { return @{$_[0]->{row}}; }
+	sub err { return 0; }
+	sub finish { return 1; }
+}
+
+{
+	package TestRows;
+	sub fetchrow_array {
+		my ($self) = @_;
+		$self->{index} ||= 0;
+		return if $self->{index} >= @{$self->{rows}};
+		return @{$self->{rows}[$self->{index}++]};
+	}
+	sub err { return 0; }
+	sub finish { return 1; }
 }
 
 {
@@ -84,7 +98,11 @@ sub new_server {
 		srv_players => {},
 		ba_swapped_players => {},
 		ba_pending_swaps => {},
+		ba_swap_history_loaded => 1,
+		ba_swap_history_warning => 0,
 		ba_round_orientation => [],
+		ba_round_bias_active => 0,
+		ba_round_bias_eligible => 0,
 		ba_eligible_ct_rounds => 0,
 		ba_eligible_ts_rounds => 0,
 		ba_fill_roster_signature => undef,
@@ -97,6 +115,8 @@ sub new_server {
 		mp_maxrounds => 25,
 		mp_timelimit => 0,
 		map_started => time(),
+		map => "de_dust2",
+		id => 7,
 		map_rounds => 12,
 		winner => ["ct", "ct", "ts", ""],
 		ba_ct_wins => 2,
@@ -471,6 +491,21 @@ $server->mark_balance_player_swapped($bot);
 ok($server->balance_player_was_swapped($human), "human swap is recorded by stable identity");
 ok($server->balance_player_was_swapped($bot), "bot swap is recorded for the current userid");
 
+{
+	no warnings qw(redefine once);
+	my $restore = new_server();
+	$restore->{ba_swap_history_loaded} = 0;
+	local *main::execCached = sub {
+		return bless { rows => [["STEAM_0:1:123"]] }, "TestRows";
+	};
+	ok($restore->load_balance_swap_history(), "same-map human swap history restores after daemon startup");
+	ok($restore->balance_player_was_swapped($human), "restored human remains protected from a second swap");
+	$restore->{ba_swap_history_loaded} = 0;
+	local *main::execCached = sub { die "history unavailable" };
+	ok(!$restore->load_balance_swap_history(), "swap history load failures are observable");
+	ok($restore->balance_player_was_swapped($human), "unknown swap history fails closed for human swaps");
+}
+
 $server = new_server();
 $server->{ba_pending_swaps} = {};
 my $pending_human = {
@@ -486,9 +521,16 @@ ok($server->request_balance_player_swap($pending_entry), "ATB dispatches an elig
 ok(!$server->balance_player_was_swapped($pending_entry),
 	"a dispatched swap does not consume the map limit before team-change acknowledgement");
 $pending_human->{team} = "TERRORIST";
-ok($server->confirm_balance_player_swap($pending_human), "matching team event confirms the pending swap");
+my @swap_history_inserts;
+{
+	no warnings qw(redefine once);
+	local *main::execNonQuery = sub { push @swap_history_inserts, $_[0]; return 1 };
+	ok($server->confirm_balance_player_swap($pending_human), "matching team event confirms the pending swap");
+}
 ok($server->balance_player_was_swapped($pending_entry),
 	"confirmed swaps consume the once-per-map allowance");
+like($swap_history_inserts[0], qr/hlstats_MapTeamBalanceSwaps.*STEAM_0:1:456/s,
+	"confirmed human swaps persist by map and stable identity");
 my $wrong_team_player = { %$pending_human, userid => 19, uniqueid => "STEAM_0:1:457", team => "CT" };
 $server->{ba_pending_swaps}{"human:STEAM_0:1:457"} = { team => "TERRORIST", expires => time() + 10 };
 ok(!$server->confirm_balance_player_swap($wrong_team_player),
@@ -557,6 +599,28 @@ $server->{srv_players}{t2}{is_bot} = 0;
 $server->{minplayers} = 6;
 ok(!$server->map_bias_round_is_eligible(),
 	"map-bias samples do not train below MinPlayers");
+
+{
+	$server = new_server();
+	$server->{minplayers} = 4;
+	$server->{balance_analyze_rounds} = 7;
+	$server->{srv_players} = {
+		ct1 => { is_bot => 0, team => "CT" },
+		ct2 => { is_bot => 0, team => "CT" },
+		ts1 => { is_bot => 0, team => "TERRORIST" },
+		ts2 => { is_bot => 0, team => "TERRORIST" },
+	};
+	$server->begin_map_bias_round();
+	ok($server->{ba_round_bias_eligible}, "eligible roster is snapshotted at round start");
+	$server->note_balance_roster_change();
+	$server->add_round_winner("ct");
+	is($server->{ba_eligible_ct_rounds}, 0,
+		"a mid-round roster change prevents that round training map bias");
+	$server->begin_map_bias_round();
+	$server->add_round_winner("ts");
+	is($server->{ba_eligible_ts_rounds}, 1,
+		"a bot-free stable round contributes its snapshotted eligibility");
+}
 
 $server = new_server();
 $server->{map_rounds} = 1;

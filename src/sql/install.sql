@@ -2,7 +2,7 @@
 
 -- This file is only needed for new installations.
 
-SET @DBVERSION="94";
+SET @DBVERSION="95";
 SET @VERSION="1.11.6";
 
 -- --------------------------------------------------------
@@ -3931,6 +3931,16 @@ CREATE TABLE IF NOT EXISTS `hlstats_MapTeamBalanceMatches` (
   `eligible` tinyint(1) unsigned NOT NULL DEFAULT '0',
   PRIMARY KEY (`serverId`,`map`,`mapStarted`),
   KEY `server_map` (`serverId`,`map`)
+) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `hlstats_MapTeamBalanceSwaps` (
+  `serverId` int(10) unsigned NOT NULL,
+  `map` varchar(64) NOT NULL,
+  `mapStarted` int(10) unsigned NOT NULL,
+  `uniqueId` varchar(64) NOT NULL,
+  `swappedAt` int(10) unsigned NOT NULL,
+  PRIMARY KEY (`serverId`,`map`,`mapStarted`,`uniqueId`),
+  KEY `server_map_started` (`serverId`,`map`,`mapStarted`)
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `hlstats_Mods_Defaults` (

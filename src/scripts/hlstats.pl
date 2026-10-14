@@ -799,7 +799,9 @@ sub getServer
 			a.publicaddress,
 			IFNULL(b.`value`,3) AS game_engine,
 			IFNULL(c.`realgame`, 'hl2mp') AS realgame,
-			IFNULL(a.max_players, 0) AS maxplayers
+			IFNULL(a.max_players, 0) AS maxplayers,
+			a.act_map,
+			a.map_started
 			
 		FROM
 			hlstats_Servers a LEFT JOIN hlstats_Servers_Config b on a.serverId = b.serverId AND b.`parameter` = 'GameEngine' LEFT JOIN `hlstats_Games` c ON a.game = c.code
@@ -814,7 +816,7 @@ sub getServer
 	my $result = &execCached("get_server_information", $query, @vals);
 
 	if ($result->rows) {
-		my ($serverId, $game, $name, $rcon_pass, $publicaddress, $gameengine, $realgame, $maxplayers) = $result->fetchrow_array;
+		my ($serverId, $game, $name, $rcon_pass, $publicaddress, $gameengine, $realgame, $maxplayers, $map, $map_started) = $result->fetchrow_array;
 		$result->finish;
 		if (!defined($g_games{$game})) {
 			$g_games{$game} = new HLstats_Game($game);
@@ -823,7 +825,9 @@ sub getServer
 		# trying first using l4d as "realgame" code for l4d2 in db. if default server config settings won't work, will leave as own "realgame" code in db but uncomment line.
 		#$realgame = "l4d" if $realgame eq "l4d2";
 		
-		return new HLstats_Server($serverId, $address, $port, $name, $rcon_pass, $game, $publicaddress, $gameengine, $realgame, $maxplayers);
+		my $server = new HLstats_Server($serverId, $address, $port, $name, $rcon_pass, $game, $publicaddress, $gameengine, $realgame, $maxplayers, undef, undef, undef, $map, $map_started);
+		$server->load_balance_swap_history();
+		return $server;
 	} else {
 		$result->finish;
 		return 0;

@@ -10,7 +10,9 @@
 #define REQUIRE_EXTENSIONS
 #define REQUIRE_PLUGIN
 
-#define PLUGIN_VERSION "1.11.4"
+#define PLUGIN_VERSION "1.11.5"
+#define API_REQUEST_TTL 30.0
+#define API_MAX_PENDING_REQUESTS 256
 
 int g_iRequestId = 0;
 ArrayList g_hRequestCallbacks;
@@ -91,14 +93,16 @@ public int Api_GetStats(Handle plugin, int numParams)
     ApiCallbackData data;
 
     data.id = requestId;
-    data.time = GetGameTime();
+    data.time = float(GetTime());
     data.client = callbackClient;
     data.plugin = plugin;
     data.callback = callbackFunction;
     data.payload = callbackPayload;
     data.limit = callbackLimit;
 
-    if (g_hRequestCallbacks != null && g_hRequestCallbacks != INVALID_HANDLE) {
+    PrunePendingRequests();
+    if (g_hRequestCallbacks != null && g_hRequestCallbacks != INVALID_HANDLE
+        && g_hRequestCallbacks.Length < API_MAX_PENDING_REQUESTS) {
 
         g_hRequestCallbacks.PushArray(data, sizeof(data));
 
@@ -122,14 +126,17 @@ public int Api_GetJoinPolicy(Handle plugin, int numParams)
     int callbackClient = GetNativeCell(1);
     Function callbackFunction = GetNativeCell(2);
     int callbackPayload = numParams >= 3 ? GetNativeCell(3) : 0;
-    if (!IsValidClient(callbackClient) || g_hRequestCallbacks == null) {
+    PrunePendingRequests();
+    if (!IsValidClient(callbackClient) || g_hRequestCallbacks == null
+        || g_hRequestCallbacks == INVALID_HANDLE
+        || g_hRequestCallbacks.Length >= API_MAX_PENDING_REQUESTS) {
         return false;
     }
 
     int requestId = GetRequestId();
     ApiCallbackData data;
     data.id = requestId;
-    data.time = GetGameTime();
+    data.time = float(GetTime());
     data.client = callbackClient;
     data.plugin = plugin;
     data.callback = callbackFunction;
@@ -159,6 +166,7 @@ public void Api_SendRequest(int client, char[] verb, const char[] event, const c
 
 public Action _Api_Response(int args)
 {
+    PrunePendingRequests();
     if (args < 1) {
         return Plugin_Handled;
     }
@@ -324,6 +332,37 @@ public int FindRequestById(int requestId)
     }
 
     return index;
+}
+
+void PrunePendingRequests()
+{
+    if (g_hRequestCallbacks == null || g_hRequestCallbacks == INVALID_HANDLE) {
+        return;
+    }
+
+    float now = float(GetTime());
+    for (int i = g_hRequestCallbacks.Length - 1; i >= 0; i--) {
+        ApiCallbackData data;
+        g_hRequestCallbacks.GetArray(i, data, sizeof(data));
+        if (now - data.time > API_REQUEST_TTL) {
+            g_hRequestCallbacks.Erase(i);
+        }
+    }
+}
+
+public void OnClientDisconnect(int client)
+{
+    if (g_hRequestCallbacks == null || g_hRequestCallbacks == INVALID_HANDLE) {
+        return;
+    }
+
+    for (int i = g_hRequestCallbacks.Length - 1; i >= 0; i--) {
+        ApiCallbackData data;
+        g_hRequestCallbacks.GetArray(i, data, sizeof(data));
+        if (data.client == client) {
+            g_hRequestCallbacks.Erase(i);
+        }
+    }
 }
 
 /**

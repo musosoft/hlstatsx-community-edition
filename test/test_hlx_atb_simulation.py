@@ -158,7 +158,23 @@ class HLXATBSimulationTests(unittest.TestCase):
         self.assertIn("note_balance_roster_change()", team_selection)
         self.assertIn("confirm_balance_player_swap($player)", team_selection)
         self.assertIn("run_pending_team_balance(time())", daemon)
+        self.assertIn("begin_map_bias_round()", events)
+        self.assertIn("ba_round_bias_eligible", server)
         self.assertNotIn("select(undef, undef, undef, 4.5)", server)
+
+    def test_routine_analysis_does_not_broadcast_chat(self):
+        server = (ROOT / "src/scripts/HLstats_Server.pm").read_text()
+        analyze = server.split("sub analyze_teams", 1)[1].split("sub updateDB", 1)[0]
+        self.assertNotIn("ATB - Checking Teams", analyze)
+
+    def test_human_swap_allowance_survives_daemon_reload(self):
+        server = (ROOT / "src/scripts/HLstats_Server.pm").read_text()
+        sql = (ROOT / "src/sql/install.sql").read_text()
+        updater = ROOT / "src/web/updater/95.php"
+        self.assertIn("sub load_balance_swap_history", server)
+        self.assertIn("sub persist_balance_player_swap", server)
+        self.assertIn("hlstats_MapTeamBalanceSwaps", sql)
+        self.assertTrue(updater.is_file())
 
     def test_fill_count_correction_moves_bots_before_humans(self):
         players = [

@@ -2159,6 +2159,7 @@ sub doEvent_WorldAction
 			$g_servers{$s_addr}->set("round_status", 0);
 			$g_servers{$s_addr}->set("ba_player_switch", 0);
 			$g_servers{$s_addr}->prepare_halftime_balance();
+			$g_servers{$s_addr}->begin_map_bias_round();
 		}
 		
 		while (my($pl, $player) = each(%g_players) )
