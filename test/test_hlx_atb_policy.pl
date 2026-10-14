@@ -300,13 +300,15 @@ is($server->apply_team_balance_config_defaults({ BalanceAnalyzeRounds => "0" })-
 }
 
 $server = new_server();
-$server->schedule_team_balance();
+$server->schedule_team_balance(1000);
 ok($server->{ba_balance_pending}, "round-end schedules a deferred balance");
-is($server->{ba_balance_due}, $server->{ba_balance_deadline},
-	"fill mode defers analysis through the bot round-start reconciliation window");
+is($server->{ba_balance_due}, 1002,
+	"fill mode begins checking within the round-end window");
+is($server->{ba_balance_deadline}, 1015,
+	"fill roster stabilization retains a bounded deadline");
 
-$server->note_balance_roster_change();
-cmp_ok($server->{ba_balance_due}, '>=', time() + 1,
+$server->note_balance_roster_change(1001);
+cmp_ok($server->{ba_balance_due}, '>=', 1002,
 	"roster changes push back the pending balance check");
 
 my $waiting_due = $server->{ba_balance_due};
@@ -320,12 +322,16 @@ is($server->{ba_balance_due}, $waiting_due + 1,
 
 $server = new_server();
 $server->schedule_team_balance(1000);
+$server->{srv_players} = {
+	bot => { is_bot => 1, team => "Unassigned", userid => 99 },
+};
 {
 	local *HLstats_Server::analyze_teams = sub { $_[0]->{test_analyze_count}++ };
 	$server->run_pending_team_balance(1010);
 	ok($server->{ba_balance_pending},
 		"ATB cannot analyze before a fill-mode round-start bot adjustment");
 	$server->note_balance_roster_change(1011); # bot is kicked after the human's team join
+	$server->{srv_players}{bot}{team} = "TERRORIST";
 	$server->run_pending_team_balance(1014);
 	ok(!$server->{test_analyze_count},
 		"a delayed round-start bot kick cannot be preceded by an early swap decision");

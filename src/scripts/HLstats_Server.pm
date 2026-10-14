@@ -962,9 +962,9 @@ sub schedule_team_balance
 		}
 	}
 	$self->{ba_balance_pending} = 1;
-	# Fill mode can reconcile bots at round start even when quota counts match.
-	# Keep ATB out of that race window before doing its first analysis.
-	$self->{ba_balance_due} = $now + ($fill_mode ? $max_wait : 2);
+	# Start during the round-end window; run_pending_team_balance() independently
+	# waits for a stable fill roster and refuses to analyze once a round is live.
+	$self->{ba_balance_due} = $now + 2;
 	$self->{ba_balance_deadline} = $now + $max_wait;
 }
 
