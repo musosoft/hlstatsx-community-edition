@@ -90,6 +90,7 @@ sub acknowledge_test_swaps {
 sub new_server {
 	return bless {
 		ba_enabled => 1,
+		jtc_join_reservations => {},
 		rcon => "test",
 		rcon_obj => bless({}, "TestRcon"),
 		minplayers => 4,
@@ -234,6 +235,43 @@ is($server->apply_team_balance_config_defaults({ BalanceAnalyzeRounds => "0" })-
 	$policy = $server->get_join_team_policy($joiner);
 	is_deeply($policy, { preferred_team => 0, kd_locked => 0 },
 		"backend returns no restriction when lifetime KD is below the configured threshold");
+}
+{
+	no warnings qw(redefine once);
+	local *HLstats_Server::dorcon = sub {
+		my ($self, $command) = @_;
+		return '"jtc_enabled" = "1"' if $command eq "jtc_enabled";
+		return '"jtc_kd_threshold" = "2.0"' if $command eq "jtc_kd_threshold";
+		return "";
+	};
+	$server->{play_game} = 0;
+	$server->{jtc_enabled_checked_at} = 0;
+	$server->{jtc_threshold_checked_at} = 0;
+	$server->{map_ct_wins} = 0;
+	$server->{map_ts_wins} = 0;
+	$server->{srv_players} = {
+		1 => { uniqueid => "BOT", userid => 1, is_bot => 1, team => "CT" },
+		2 => { uniqueid => "STEAM_0:0:2", userid => 2, is_bot => 0, team => "CT" },
+		3 => { uniqueid => "STEAM_0:1:3", userid => 3, is_bot => 0, team => "TERRORIST" },
+	};
+	$server->{jtc_join_reservations} = {};
+	my @joiners = map {
+		{
+			uniqueid => "STEAM_0:1:" . (100 + $_), userid => 100 + $_,
+			is_bot => 0, total_kills => 20, lifetime_deaths => 10,
+			team => "TERRORIST",
+		}
+	} 1 .. 4;
+	$server->{srv_players}{$_->{userid}} = $_ for @joiners;
+	my @teams = map { $server->get_join_team_policy($_)->{preferred_team} } @joiners;
+	is_deeply(\@teams, [2, 3, 2, 3],
+		"pending join reservations balance a burst across current teams, including bots");
+	$server->clear_join_team_reservation($joiners[0]);
+	ok(!exists $server->{jtc_join_reservations}{$joiners[0]{uniqueid}},
+		"team selection clears the pending join reservation");
+	$server->reset_team_balance();
+	is_deeply($server->{jtc_join_reservations}, {},
+		"map balance reset clears pending join reservations");
 }
 {
 	no warnings qw(redefine once);

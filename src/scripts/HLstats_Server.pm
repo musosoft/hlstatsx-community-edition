@@ -59,6 +59,7 @@ sub new
 	$self->{game}           = $game;
 	$self->{rcon}           = $rcon_pass;
 	$self->{srv_players}	= ();
+	$self->{jtc_join_reservations} = {};
 	
 	# Game Engine
 	# HL1 - 1
@@ -890,6 +891,7 @@ sub reset_team_balance
 	$self->{ba_map_rounds} = 0;
 	$self->{ba_last_swap} = 0;
 	$self->{ba_player_switch} = 0;
+	$self->{jtc_join_reservations} = {};
 	$self->{ba_swapped_players} = {};
 	$self->{ba_pending_swaps} = {};
 	$self->{ba_swap_history_loaded} = 1;
@@ -1365,20 +1367,31 @@ sub get_join_team_policy
 {
 	my ($self, $player) = @_;
 	my $no_policy = { preferred_team => 0, kd_locked => 0 };
-	return $no_policy if !$player || $self->{play_game} != CSS()
+	return $no_policy if !$player;
+	my $uniqueid = $player->{uniqueid} // "";
+	delete $self->{jtc_join_reservations}{$uniqueid} if $uniqueid ne "";
+	return $no_policy if $self->{play_game} != CSS()
 		|| $player->{is_bot} || $player->{userid} <= 0
 		|| !$self->join_team_control_enabled();
 
-	my $uniqueid = $player->{uniqueid} // "";
-	return $no_policy if $uniqueid !~ /^(?:STEAM_[0-5]:[01]:\d+|\[U:\d+:\d+\])$/i;
+	if ($uniqueid !~ /^(?:STEAM_[0-5]:[01]:\d+|\[U:\d+:\d+\])$/i) {
+		delete $self->{jtc_join_reservations}{$uniqueid};
+		return $no_policy;
+	}
 
 	my $kills = $player->{total_kills} || 0;
 	my $deaths = $player->{lifetime_deaths} || 0;
-	return $no_policy if $kills !~ /^\d+$/ || $deaths !~ /^\d+$/;
+	if ($kills !~ /^\d+$/ || $deaths !~ /^\d+$/) {
+		delete $self->{jtc_join_reservations}{$uniqueid};
+		return $no_policy;
+	}
 	my $kd = $kills / ($deaths > 0 ? $deaths : 1);
-	return $no_policy if $kd < $self->join_team_kd_threshold();
+	if ($kd < $self->join_team_kd_threshold()) {
+		delete $self->{jtc_join_reservations}{$uniqueid};
+		return $no_policy;
+	}
 
-	my ($ct_count, $ts_count) = (0, 0);
+	my ($ct_count, $ts_count, $reserved_ct_count, $reserved_ts_count) = (0, 0, 0, 0);
 	for my $other (values %{$self->{srv_players}}) {
 		next if $other->{userid} == $player->{userid}
 			|| ($other->{uniqueid} // "") eq $uniqueid;
@@ -1386,6 +1399,15 @@ sub get_join_team_policy
 			$ct_count++;
 		} elsif (($other->{team} // "") eq "TERRORIST") {
 			$ts_count++;
+		} else {
+			my $reserved_team = $self->{jtc_join_reservations}{$other->{uniqueid} // ""} || 0;
+			if ($reserved_team == 3) {
+				$ct_count++;
+				$reserved_ct_count++;
+			} elsif ($reserved_team == 2) {
+				$ts_count++;
+				$reserved_ts_count++;
+			}
 		}
 	}
 
@@ -1393,6 +1415,10 @@ sub get_join_team_policy
 	if ($ts_count < $ct_count) {
 		$preferred_team = 2;
 	} elsif ($ct_count < $ts_count) {
+		$preferred_team = 3;
+	} elsif ($reserved_ts_count < $reserved_ct_count) {
+		$preferred_team = 2;
+	} elsif ($reserved_ct_count < $reserved_ts_count) {
 		$preferred_team = 3;
 	} elsif (($self->{map_ts_wins} || 0) < ($self->{map_ct_wins} || 0)) {
 		$preferred_team = 2;
@@ -1406,7 +1432,16 @@ sub get_join_team_policy
 		$preferred_team = (int(rand(2)) == 0) ? 2 : 3;
 	}
 
+	$self->{jtc_join_reservations}{$uniqueid} = $preferred_team;
 	return { preferred_team => $preferred_team, kd_locked => 1 };
+}
+
+sub clear_join_team_reservation
+{
+	my ($self, $player) = @_;
+	return if !$player;
+	my $uniqueid = $player->{uniqueid} // "";
+	delete $self->{jtc_join_reservations}{$uniqueid} if $uniqueid ne "";
 }
 
 sub debug_message

@@ -429,6 +429,7 @@ sub doEvent_Connect
 	
 	if ($player)
 	{
+		$g_servers{$s_addr}->clear_join_team_reservation($player);
 		$g_servers{$s_addr}->note_balance_roster_change();
 		$g_servers{$s_addr}->update_player_kd_cache($player);
 		if ($ipAddr eq "") {
@@ -684,6 +685,7 @@ sub doEvent_Disconnect
 	
 	if ($player)
 	{
+		$g_servers{$s_addr}->clear_join_team_reservation($player);
 		$g_servers{$s_addr}->note_balance_roster_change();
 		if (($g_servers{$s_addr}->{ignore_bots} == 1) && (($player->{is_bot} == 1) || ($pUserId < 0)))
 		{
@@ -951,6 +953,7 @@ sub doEvent_TeamSelection
 	
 	if ($player)
 	{
+		$g_servers{$s_addr}->clear_join_team_reservation($player);
 		$g_servers{$s_addr}->note_balance_roster_change();
 		if (($g_servers{$s_addr}->{ignore_bots} == 1) && ($player->{is_bot} == 1))
 		{
