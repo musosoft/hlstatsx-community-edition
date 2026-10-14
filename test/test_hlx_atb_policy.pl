@@ -259,7 +259,7 @@ is($server->apply_team_balance_config_defaults({ BalanceAnalyzeRounds => "0" })-
 		{
 			uniqueid => "STEAM_0:1:" . (100 + $_), userid => 100 + $_,
 			is_bot => 0, total_kills => 20, lifetime_deaths => 10,
-			team => "TERRORIST",
+			team => "Unassigned",
 		}
 	} 1 .. 4;
 	$server->{srv_players}{$_->{userid}} = $_ for @joiners;
