@@ -139,6 +139,7 @@ sub new
 	$self->{ba_balance_pending} = 0;
 	$self->{ba_balance_due} = 0;
 	$self->{ba_balance_deadline} = 0;
+	$self->{ba_round_active} = 0;
 	$self->{ba_roster_changed_at} = 0;
 	$self->{ba_halftime_rotated} = 0;
 	$self->{balance_switch_only_dead} = 0;
@@ -900,6 +901,7 @@ sub reset_team_balance
 	$self->{ba_balance_pending} = 0;
 	$self->{ba_balance_due} = 0;
 	$self->{ba_balance_deadline} = 0;
+	$self->{ba_round_active} = 0;
 	$self->{ba_roster_changed_at} = 0;
 	$self->{ba_halftime_rotated} = 0;
 	$self->{ba_round_bias_active} = 0;
@@ -948,6 +950,7 @@ sub schedule_team_balance
 	my ($self, $now) = @_;
 	return if $::g_stdin != 0 || $self->{ba_enabled} == 0;
 
+	$self->{ba_round_active} = 0;
 	$now = time() if !defined($now);
 	my $max_wait = 15;
 	my $fill_mode = $self->is_bot_fill_mode();
@@ -979,10 +982,6 @@ sub note_balance_roster_change
 		$self->{ba_balance_due} = $new_due;
 		$self->{ba_balance_due} = $self->{ba_balance_deadline}
 			if $self->{ba_balance_due} > $self->{ba_balance_deadline};
-	} else {
-		if ($self->is_bot_fill_mode()) {
-			$self->schedule_team_balance($now);
-		}
 	}
 }
 
@@ -990,6 +989,7 @@ sub run_pending_team_balance
 {
 	my ($self, $now) = @_;
 	return if !$self->{ba_balance_pending} || $now < $self->{ba_balance_due};
+	return if $self->{ba_round_active};
 	$self->expire_pending_balance_swaps($now);
 
 	my $recent_change = $self->{ba_roster_changed_at}

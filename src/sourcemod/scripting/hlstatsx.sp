@@ -74,20 +74,6 @@ new Handle:HLstatsXMenuEvents;
 new Handle: PlayerColorArray;
 new ColorSlotArray[] = { -1, -1, -1, -1, -1, -1 };
 
-new const String:ct_models[][] = {
-	"models/player/ct_urban.mdl", 
-	"models/player/ct_gsg9.mdl", 
-	"models/player/ct_sas.mdl", 
-	"models/player/ct_gign.mdl"
-};
-
-new const String:ts_models[][] = {
-	"models/player/t_phoenix.mdl", 
-	"models/player/t_leet.mdl", 
-	"models/player/t_arctic.mdl", 
-	"models/player/t_guerilla.mdl"
-};
-
 new const String: modnamelist[][] = {
 	"Counter-Strike: Source",
 	"Day of Defeat: Source",
@@ -134,7 +120,6 @@ public APLRes:AskPluginLoad2(Handle:myself, bool:late, String:error[], err_max)
 {
 	g_bLateLoad = late;
 	MarkNativeAsOptional("CS_SwitchTeam");
-	MarkNativeAsOptional("CS_RespawnPlayer");
 	MarkNativeAsOptional("SetCookieMenuItem");
 	
 	return APLRes_Success;
@@ -1988,7 +1973,7 @@ public Action: HLstatsX_Event_PlyTeamChange(Handle:event, const String:name[], b
 
 swap_player(player_index)
 {
-	if (IsClientInGame(player_index))
+	if (IsClientInGame(player_index) && !IsPlayerAlive(player_index))
 	{
 		switch (GetClientTeam(player_index))
 		{
@@ -2005,18 +1990,7 @@ swap_player(player_index)
 				EndMessage();
 				EmitSoundToClient(player_index, "common/warning.wav");
 				PrintCenterText(player_index, "[HlstatsX] You were switched to balance team! You are now T.");
-
-				if (IsPlayerAlive(player_index))
-				{
-					CS_SwitchTeam(player_index, CS_TEAM_T);
-					CS_RespawnPlayer(player_index);
-					new new_model = GetRandomInt(0, 3);
-					SetEntityModel(player_index, ts_models[new_model]);
-				}
-				else
-				{
-					CS_SwitchTeam(player_index, CS_TEAM_T);
-				}
+				CS_SwitchTeam(player_index, CS_TEAM_T);
 			}
 			case CS_TEAM_T:
 			{
@@ -2032,24 +2006,13 @@ swap_player(player_index)
 
 				EmitSoundToClient(player_index, "common/warning.wav");
 				PrintCenterText(player_index, "[HlstatsX] You were switched to balance team! You are now CT.");
-				if (IsPlayerAlive(player_index))
-				{
-					CS_SwitchTeam(player_index, CS_TEAM_CT);
-					CS_RespawnPlayer(player_index);
-					new new_model = GetRandomInt(0, 3);
-					SetEntityModel(player_index, ct_models[new_model]);
-					new weapon_entity = GetPlayerWeaponSlot(player_index, 4);
-					if (weapon_entity > 0)
-					{
-						CS_DropWeapon( player_index, weapon_entity, true, true );
-					}
-				}
-				else
-				{
-					CS_SwitchTeam(player_index, CS_TEAM_CT);
-				}
+				CS_SwitchTeam(player_index, CS_TEAM_CT);
 			}
 		}
+	}
+	else if (IsClientInGame(player_index))
+	{
+		PrintToServer("[HLstatsX] Refusing team swap: target is alive.");
 	}
 }
 

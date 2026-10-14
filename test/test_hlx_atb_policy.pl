@@ -110,6 +110,7 @@ sub new_server {
 		ba_balance_pending => 0,
 		ba_balance_due => 0,
 		ba_balance_deadline => 0,
+		ba_round_active => 0,
 		ba_roster_changed_at => 0,
 		mp_halftime => 1,
 		mp_maxrounds => 25,
@@ -382,33 +383,21 @@ ok($server->bot_fill_roster_is_changing(),
 
 my $change_time = time();
 $server = new_server();
+$server->{ba_round_active} = 1;
 $server->note_balance_roster_change($change_time);
-ok($server->{ba_balance_pending},
-	"roster changes schedule a balance even after an earlier check");
-is($server->{ba_balance_due}, $server->{ba_balance_deadline},
-	"roster-triggered checks retain the fill settle window");
-my $hard_deadline = $server->{ba_balance_deadline};
-$server->note_balance_roster_change($change_time + 3);
-is($server->{ba_balance_deadline}, $hard_deadline,
-	"roster churn does not extend the original hard deadline");
+ok(!$server->{ba_balance_pending},
+	"mid-round roster changes do not schedule a balance");
+$server->schedule_team_balance($change_time);
+ok($server->{ba_balance_pending}, "round end schedules a balance");
 {
 	local *HLstats_Server::analyze_teams = sub { $_[0]->{test_analyze_count}++ };
-	$server->{ba_balance_due} = $hard_deadline;
-	$server->run_pending_team_balance($hard_deadline);
+	$server->{ba_balance_due} = $change_time;
+	$server->{ba_round_active} = 1; # The deferred check crossed into the next round.
+	$server->run_pending_team_balance($change_time + 20);
 	ok($server->{ba_balance_pending},
-		"a hard deadline cannot force a swap while bot fill is changing");
-	$server->run_pending_team_balance($server->{ba_balance_due} + 3);
-	ok(!$server->{ba_balance_pending}, "the check runs after the roster stabilizes");
-	is($server->{test_analyze_count}, 1,
-		"stable fill state performs exactly one final analysis");
-}
-{
-	no warnings qw(redefine once);
-	local *HLstats_Server::dorcon = sub { return '"bot_quota_mode" = "normal"' };
-	$server = new_server();
-	$server->note_balance_roster_change(time());
-	ok(!$server->{ba_balance_pending},
-		"non-fill servers retain round-end-only balance scheduling");
+		"a deferred round-end check cannot execute during a live round");
+	ok(!$server->{test_analyze_count},
+		"no mid-round balance analysis occurs after the bot-fill delay");
 }
 
 $server = new_server();

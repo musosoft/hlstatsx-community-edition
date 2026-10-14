@@ -2122,6 +2122,7 @@ sub doEvent_WorldAction
 	}
 	if ($action eq "Round_End" || $action eq "Round_Win" || $action eq "Mini_Round_Win") {
 		if ($action eq "Round_End") {
+			$g_servers{$s_addr}->{ba_round_active} = 0;
 			$g_servers{$s_addr}->schedule_team_balance();
 		}
 		
@@ -2156,6 +2157,7 @@ sub doEvent_WorldAction
 	if ($action eq "Round_Start" || $action eq "Mini_Round_Start") {
 		$g_servers{$s_addr}->set("bonusroundtime_state", 0);
 		if ($action eq "Round_Start") {
+			$g_servers{$s_addr}->{ba_round_active} = 1;
 			$g_servers{$s_addr}->set("round_status", 0);
 			$g_servers{$s_addr}->set("ba_player_switch", 0);
 			$g_servers{$s_addr}->prepare_halftime_balance();

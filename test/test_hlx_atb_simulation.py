@@ -153,6 +153,16 @@ class HLXATBSimulationTests(unittest.TestCase):
         self.assertIn("bot_quota_mode", server)
         self.assertIn("apply_team_balance_config_defaults(\\%s_cfg)", daemon)
         self.assertIn("schedule_team_balance()", events)
+        roster_change = server.split("sub note_balance_roster_change", 1)[1].split(
+            "sub run_pending_team_balance", 1
+        )[0]
+        self.assertNotIn("schedule_team_balance", roster_change)
+        pending = server.split("sub run_pending_team_balance", 1)[1].split(
+            "sub bot_fill_roster_is_changing", 1
+        )[0]
+        self.assertIn("return if $self->{ba_round_active}", pending)
+        self.assertIn('$g_servers{$s_addr}->{ba_round_active} = 0', events)
+        self.assertIn('$g_servers{$s_addr}->{ba_round_active} = 1', events)
         self.assertIn("note_balance_roster_change()", events)
         team_selection = events.split("sub doEvent_TeamSelection", 1)[1].split("sub doEvent_RoleSelection", 1)[0]
         self.assertIn("note_balance_roster_change()", team_selection)
