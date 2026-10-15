@@ -432,6 +432,13 @@ sub doEvent_Connect
 		$g_servers{$s_addr}->clear_join_team_reservation($player);
 		$g_servers{$s_addr}->note_balance_roster_change();
 		$g_servers{$s_addr}->update_player_kd_cache($player);
+		# joinpolicy can arrive before this Connect event and its reservation is
+		# cleared above. Recreate it now so a burst of unassigned humans is visible
+		# to both subsequent join policies and round-end ATB.
+		$g_servers{$s_addr}->get_join_team_policy($player)
+			if uc($player->{team} // "") ne "CT"
+			&& uc($player->{team} // "") ne "TERRORIST"
+			&& uc($player->{team} // "") ne "SPECTATOR";
 		if ($ipAddr eq "") {
 		    $ipAddr = $player->{address};
 		}

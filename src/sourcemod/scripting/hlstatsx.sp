@@ -27,7 +27,19 @@
 #include <loghelper>
 #include <cstrike>
 #include <clientprefs>
- 
+#undef REQUIRE_PLUGIN
+#undef REQUIRE_EXTENSIONS
+#include <hlstatsx_api>
+#define REQUIRE_EXTENSIONS
+#define REQUIRE_PLUGIN
+
+// Minimal upstream HLstatsX playerinfo protocol, owned by this plugin.
+#define HLX_LANGUAGE_TIMEOUT 30.0
+int g_iLanguageRequestId;
+int g_iLanguageRequest[MAXPLAYERS + 1];
+int g_iLanguageSerial[MAXPLAYERS + 1];
+Handle g_hLanguageTimer[MAXPLAYERS + 1];
+
 #define VERSION "1.11.4"
 #define HLXTAG "HLstatsX:CE"
 
@@ -104,6 +116,12 @@ new bool:g_bLateLoad = false;
 new bool:g_bIgnoreNextTagChange = false;
 new Handle:g_hCustomTags;
 new Handle:fade_msg;
+new Handle:g_hKDCache	= INVALID_HANDLE;	/* key: steamid string (prefer Steam3), value: FloatToCell(kd) */
+new Handle:g_hKDExpiry	= INVALID_HANDLE;	/* key: steamid string (prefer Steam3), value: expiry epoch (int) */
+new bool:g_bDominationDebug = false;
+new bool:g_bDominationAutoRepro = false;
+new String:g_sDominationDebugLog[PLATFORM_MAX_PATH];
+new String:g_sDominationAutoReproFlag[PLATFORM_MAX_PATH];
 
 #define SVTAGSIZE 128
 
@@ -121,6 +139,11 @@ public APLRes:AskPluginLoad2(Handle:myself, bool:late, String:error[], err_max)
 	g_bLateLoad = late;
 	MarkNativeAsOptional("CS_SwitchTeam");
 	MarkNativeAsOptional("SetCookieMenuItem");
+	MarkNativeAsOptional("HLStatsX_Api_HandleResponse");
+
+	CreateNative("HLX_KD_GetClient", Native_HLX_KD_GetClient);
+	CreateNative("HLX_GetPreferredTeam", Native_HLX_GetPreferredTeam);
+	RegPluginLibrary("hlstatsx_kd");
 	
 	return APLRes_Success;
 }
@@ -128,6 +151,7 @@ public APLRes:AskPluginLoad2(Handle:myself, bool:late, String:error[], err_max)
 
 public OnPluginStart() 
 {
+	RegServerCmd("hlx_api_response", HLX_ClientLanguageResponse);
 	g_evEngineVersion = GetEngineVersion();
 
 	if (g_evEngineVersion == Engine_CSGO) {
@@ -154,6 +178,10 @@ public OnPluginStart()
 	RegServerCmd("hlx_sm_player_action", hlx_sm_player_action);
 	RegServerCmd("hlx_sm_team_action",   hlx_sm_team_action);
 	RegServerCmd("hlx_sm_world_action",  hlx_sm_world_action);
+	RegServerCmd("hlx_debug_dom_on",     Command_HLX_DebugDomOn);
+	RegServerCmd("hlx_debug_dom_off",    Command_HLX_DebugDomOff);
+	RegServerCmd("hlx_debug_dom_dump",   Command_HLX_DebugDomDump);
+	RegServerCmd("hlx_debug_dom_pair",   Command_HLX_DebugDomPair);
 
 	if (gamemod == Game_INSMOD)
 	{
@@ -232,8 +260,22 @@ public OnPluginStart()
 
 	PlayerColorArray = CreateArray();
 	message_recipients = CreateStack();
+	BuildPath(Path_SM, g_sDominationDebugLog, sizeof(g_sDominationDebugLog), "logs/hlstatsx_domination_debug.log");
+	BuildPath(Path_SM, g_sDominationAutoReproFlag, sizeof(g_sDominationAutoReproFlag), "configs/hlx_domination_autorepro.flag");
+	g_bDominationAutoRepro = FileExists(g_sDominationAutoReproFlag);
+	if (g_bDominationAutoRepro)
+	{
+		g_bDominationDebug = true;
+		LogToFileEx(g_sDominationDebugLog, "autorepro_flag_detected path=%s", g_sDominationAutoReproFlag);
+		CreateTimer(8.0, Timer_HLX_DebugAutoReproPrepare, _, TIMER_FLAG_NO_MAPCHANGE);
+	}
 	
 	GetTeams(gamemod == Game_INSMOD);
+
+	g_hKDCache = CreateTrie();
+	g_hKDExpiry = CreateTrie();
+	RegServerCmd("sm_kd_set", Command_HLX_KDSet);
+	RegServerCmd("sm_kd_get", Command_HLX_KDGet);
 }
 
 
@@ -481,10 +523,163 @@ get_server_mod()
 
 public OnClientPostAdminCheck(client)
 {
+	HLX_RequestClientLanguage(client);
+
 	if (g_bGameCanDoMotd && !IsFakeClient(client))
 	{
 		QueryClientConVar(client, "cl_disablehtmlmotd", motdQuery);
 	}
+}
+
+stock bool HLX_CanOverrideLanguage(int client)
+{
+	if (client <= 0 || client > MaxClients || !IsClientInGame(client) || IsFakeClient(client))
+	{
+		return false;
+	}
+
+	int english = GetLanguageByCode("en");
+	// Original English includes deliberately selected English. Never replace another choice.
+	return english != -1 && GetClientOriginalLanguage(client) == english
+		&& GetClientLanguage(client) == english;
+}
+
+stock void HLX_RequestClientLanguage(int client)
+{
+	if (!HLX_CanOverrideLanguage(client) || g_iLanguageRequest[client] != 0)
+	{
+		return;
+	}
+
+	char authId[32], teamName[32];
+	if (!GetClientAuthId(client, AuthId_Steam2, authId, sizeof(authId)))
+	{
+		return;
+	}
+	GetTeamName(GetClientTeam(client), teamName, sizeof(teamName));
+	// Stay in upstream's 1..65535 range and never reuse an outstanding id.
+	bool collision;
+	do
+	{
+		g_iLanguageRequestId = g_iLanguageRequestId % 65535 + 1;
+		collision = false;
+		for (int other = 1; other <= MaxClients; other++)
+		{
+			if (g_iLanguageRequest[other] == g_iLanguageRequestId) collision = true;
+		}
+	} while (collision);
+	g_iLanguageRequest[client] = g_iLanguageRequestId;
+	g_iLanguageSerial[client] = GetClientSerial(client);
+	g_hLanguageTimer[client] = CreateTimer(HLX_LANGUAGE_TIMEOUT, HLX_LanguageTimeout, client);
+	LogToGame("\"%N<%d><%s><%s>\" api_request \"playerinfo\" (value \"%d\")",
+		client, GetClientUserId(client), authId, teamName, g_iLanguageRequest[client]);
+}
+
+stock void HLX_ClearLanguageRequest(int client)
+{
+	delete g_hLanguageTimer[client];
+	g_iLanguageRequest[client] = 0;
+	g_iLanguageSerial[client] = 0;
+}
+
+public Action HLX_LanguageTimeout(Handle timer, any client)
+{
+	if (g_hLanguageTimer[client] == timer)
+	{
+		g_hLanguageTimer[client] = null;
+		HLX_ClearLanguageRequest(client);
+	}
+	return Plugin_Stop;
+}
+
+public void OnPluginEnd()
+{
+	for (int client = 1; client <= MaxClients; client++)
+	{
+		HLX_ClearLanguageRequest(client);
+	}
+}
+
+stock bool HLX_ReadPositiveArgument(int index, int &value)
+{
+	char argument[32];
+	GetCmdArg(index, argument, sizeof(argument));
+	int length = strlen(argument);
+	if (length == 0 || length > 5) return false;
+	for (int i = 0; i < length; i++)
+	{
+		if (argument[i] < '0' || argument[i] > '9') return false;
+	}
+	return StringToIntEx(argument, value) == length && value > 0;
+}
+
+stock void HLX_CountryLanguage(const char[] country, char[] code, int maxlen)
+{
+	strcopy(code, maxlen, "en");
+	if (StrEqual(country, "CZ", false)) strcopy(code, maxlen, "cze");
+	else if (StrEqual(country, "SK", false)) strcopy(code, maxlen, "sk");
+	else if (StrEqual(country, "PL", false)) strcopy(code, maxlen, "pl");
+	else if (StrEqual(country, "HU", false)) strcopy(code, maxlen, "hu");
+	else if (StrEqual(country, "DE", false) || StrEqual(country, "AT", false)) strcopy(code, maxlen, "de");
+	else if (StrEqual(country, "UA", false)) strcopy(code, maxlen, "uk");
+	else if (StrEqual(country, "FR", false)) strcopy(code, maxlen, "fr");
+}
+
+public Action HLX_ClientLanguageResponse(int args)
+{
+	int type, requestId, userId;
+	if (args < 1 || !HLX_ReadPositiveArgument(1, type))
+	{
+		return Plugin_Handled;
+	}
+	if (type == HLX_CALLBACK_TYPE_JOIN_POLICY)
+	{
+		if (args >= 5 && GetFeatureStatus(FeatureType_Native, "HLStatsX_Api_HandleResponse") == FeatureStatus_Available)
+		{
+			HLStatsX_Api_HandleResponse(args);
+		}
+		return Plugin_Handled;
+	}
+	if (args < 14 || type != HLX_CALLBACK_TYPE_PLAYER_INFO
+		|| !HLX_ReadPositiveArgument(2, requestId) || !HLX_ReadPositiveArgument(3, userId))
+	{
+		return Plugin_Handled;
+	}
+	if (GetFeatureStatus(FeatureType_Native, "HLStatsX_Api_HandleResponse") == FeatureStatus_Available)
+	{
+		HLStatsX_Api_HandleResponse(args);
+	}
+
+	int client;
+	for (int pending = 1; pending <= MaxClients; pending++)
+	{
+		if (g_iLanguageRequest[pending] == requestId)
+		{
+			client = pending;
+			break;
+		}
+	}
+	if (client == 0) return Plugin_Handled;
+	int serial = g_iLanguageSerial[client];
+	HLX_ClearLanguageRequest(client);
+	if (GetClientOfUserId(userId) != client || GetClientFromSerial(serial) != client
+		|| !HLX_CanOverrideLanguage(client))
+	{
+		return Plugin_Handled;
+	}
+
+	// Type 101: type, request id, userid, ten stats fields, country at arg 14.
+	char country[16], code[4];
+	GetCmdArg(14, country, sizeof(country));
+	if (strlen(country) != 2) return Plugin_Handled;
+	HLX_CountryLanguage(country, code, sizeof(code));
+
+	int language = GetLanguageByCode(code);
+	if (language != -1)
+	{
+		SetClientLanguage(client, language);
+	}
+	return Plugin_Handled;
 }
 
 
@@ -684,6 +879,7 @@ stock validate_team_colors()
 
 public OnClientDisconnect(client)
 {
+	HLX_ClearLanguageRequest(client);
 	if (g_bTrackColors4Chat && client > 0 && IsClientInGame(client))
 	{
 		new team_index = GetClientTeam(client);
@@ -1681,7 +1877,12 @@ public Action sm_swap(int admin, int args)
         target_client = GetClientOfUserId(user_id);
         if (target_client > 0 && IsClientInGame(target_client))
         {
-            swap_player(target_client);
+            if (GetClientTeam(target_client) != CS_TEAM_T && GetClientTeam(target_client) != CS_TEAM_CT)
+            {
+                ReplyToCommand(admin, "[HLstatsX] Target must be on a playable team.");
+                return Plugin_Handled;
+            }
+            swap_player_admin(target_client);
             ReplyToCommand(admin, "[HLstatsX] Successfully swapped player with ID.");
             return Plugin_Handled;
         }
@@ -1705,7 +1906,12 @@ public Action sm_swap(int admin, int args)
 
     if (matches == 1)
     {
-        swap_player(target_client);
+        if (GetClientTeam(target_client) != CS_TEAM_T && GetClientTeam(target_client) != CS_TEAM_CT)
+        {
+            ReplyToCommand(admin, "[HLstatsX] Target must be on a playable team.");
+            return Plugin_Handled;
+        }
+        swap_player_admin(target_client);
         ReplyToCommand(admin, "[HLstatsX] Successfully swapped player by name.");
     }
     else if (matches > 1)
@@ -1966,56 +2172,426 @@ public Action: HLstatsX_Event_PlyTeamChange(Handle:event, const String:name[], b
 		}
 	}
 
+	if (g_bDominationDebug && client > 0 && IsClientInGame(client))
+	{
+		decl String:clientName[64];
+		GetClientName(client, clientName, sizeof(clientName));
+		LogToFileEx(g_sDominationDebugLog, "player_team userid=%d client=%N name=%s oldteam=%d team=%d disconnect=%d silent=%d", GetClientUserId(client), client, clientName, GetEventInt(event, "oldteam"), GetEventInt(event, "team"), GetEventBool(event, "disconnect"), GetEventBool(event, "silent"));
+	}
+
 	return Plugin_Continue;
 }
 
-
-
-swap_player(player_index)
+stock void HLX_DebugLogDomPair(const char[] tag, int client, int other)
 {
-	if (IsClientInGame(player_index) && !IsPlayerAlive(player_index))
+	if (!g_bDominationDebug)
 	{
-		switch (GetClientTeam(player_index))
-		{
-			case CS_TEAM_CT:
-			{
-				fade_msg = StartMessageOne("Fade", player_index);
-				BfWriteShort(fade_msg, 500);
-				BfWriteShort(fade_msg, 0); //duration
-				BfWriteShort(fade_msg, 0x0001); //type
-				BfWriteByte(fade_msg, 255); //red
-				BfWriteByte(fade_msg, 0); //green
-				BfWriteByte(fade_msg, 0); //blue
-				BfWriteByte(fade_msg, 255); //alpha
-				EndMessage();
-				EmitSoundToClient(player_index, "common/warning.wav");
-				PrintCenterText(player_index, "[HlstatsX] You were switched to balance team! You are now T.");
-				CS_SwitchTeam(player_index, CS_TEAM_T);
-			}
-			case CS_TEAM_T:
-			{
-				fade_msg = StartMessageOne("Fade", player_index);
-				BfWriteShort(fade_msg, 500);
-				BfWriteShort(fade_msg, 0); //duration
-				BfWriteShort(fade_msg, 0x0001); //type
-				BfWriteByte(fade_msg, 0); //red
-				BfWriteByte(fade_msg, 0); //green
-				BfWriteByte(fade_msg, 255); //blue
-				BfWriteByte(fade_msg, 255); //alpha
-				EndMessage();
-
-				EmitSoundToClient(player_index, "common/warning.wav");
-				PrintCenterText(player_index, "[HlstatsX] You were switched to balance team! You are now CT.");
-				CS_SwitchTeam(player_index, CS_TEAM_CT);
-			}
-		}
+		return;
 	}
-	else if (IsClientInGame(player_index))
+
+	if (!IsClientInGame(client) || !IsClientInGame(other))
 	{
-		PrintToServer("[HLstatsX] Refusing team swap: target is alive.");
+		LogToFileEx(g_sDominationDebugLog, "%s invalid_pair client=%d other=%d", tag, client, other);
+		return;
+	}
+
+	new dominated = -1;
+	new dominatingMe = -1;
+	if (HasEntProp(client, Prop_Send, "m_bPlayerDominated"))
+	{
+		dominated = GetEntProp(client, Prop_Send, "m_bPlayerDominated", 1, other);
+	}
+	if (HasEntProp(client, Prop_Send, "m_bPlayerDominatingMe"))
+	{
+		dominatingMe = GetEntProp(client, Prop_Send, "m_bPlayerDominatingMe", 1, other);
+	}
+
+	LogToFileEx(g_sDominationDebugLog, "%s client=%N userid=%d team=%d other=%N other_userid=%d other_team=%d dominated=%d dominatingMe=%d", tag, client, GetClientUserId(client), GetClientTeam(client), other, GetClientUserId(other), GetClientTeam(other), dominated, dominatingMe);
+}
+
+stock void HLX_DebugLogDomState(const char[] tag, int client)
+{
+	if (!g_bDominationDebug || !IsClientInGame(client))
+	{
+		return;
+	}
+
+	for (new other = 1; other <= MaxClients; other++)
+	{
+		if (other == client || !IsClientInGame(other))
+		{
+			continue;
+		}
+		HLX_DebugLogDomPair(tag, client, other);
 	}
 }
 
+public Action:Command_HLX_DebugDomOn(args)
+{
+	decl String:mapName[64];
+	GetCurrentMap(mapName, sizeof(mapName));
+	g_bDominationDebug = true;
+	LogToFileEx(g_sDominationDebugLog, "debug_on map=%s", mapName);
+	PrintToServer("HLX domination debug enabled: %s", g_sDominationDebugLog);
+	return Plugin_Handled;
+}
+
+public Action:Command_HLX_DebugDomOff(args)
+{
+	LogToFileEx(g_sDominationDebugLog, "debug_off");
+	g_bDominationDebug = false;
+	PrintToServer("HLX domination debug disabled");
+	return Plugin_Handled;
+}
+
+public Action:Command_HLX_DebugDomDump(args)
+{
+	if (args < 2)
+	{
+		PrintToServer("Usage: hlx_debug_dom_dump <userid1> <userid2>");
+		return Plugin_Handled;
+	}
+
+	decl String:arg1[16], String:arg2[16];
+	GetCmdArg(1, arg1, sizeof(arg1));
+	GetCmdArg(2, arg2, sizeof(arg2));
+
+	new client = GetClientOfUserId(StringToInt(arg1));
+	new other = GetClientOfUserId(StringToInt(arg2));
+	HLX_DebugLogDomPair("manual_dump", client, other);
+	HLX_DebugLogDomPair("manual_dump_reverse", other, client);
+	return Plugin_Handled;
+}
+
+public Action:Command_HLX_DebugDomPair(args)
+{
+	if (args < 2)
+	{
+		PrintToServer("Usage: hlx_debug_dom_pair <dominator_userid> <victim_userid>");
+		return Plugin_Handled;
+	}
+
+	decl String:arg1[16], String:arg2[16];
+	GetCmdArg(1, arg1, sizeof(arg1));
+	GetCmdArg(2, arg2, sizeof(arg2));
+
+	new dominator = GetClientOfUserId(StringToInt(arg1));
+	new victim = GetClientOfUserId(StringToInt(arg2));
+	if (dominator <= 0 || victim <= 0 || !IsClientInGame(dominator) || !IsClientInGame(victim))
+	{
+		PrintToServer("HLX debug domination pair failed: invalid clients");
+		return Plugin_Handled;
+	}
+
+	if (HasEntProp(dominator, Prop_Send, "m_bPlayerDominated"))
+	{
+		SetEntProp(dominator, Prop_Send, "m_bPlayerDominated", 1, 1, victim);
+	}
+	if (HasEntProp(victim, Prop_Send, "m_bPlayerDominatingMe"))
+	{
+		SetEntProp(victim, Prop_Send, "m_bPlayerDominatingMe", 1, 1, dominator);
+	}
+
+	HLX_DebugLogDomPair("forced_pair", dominator, victim);
+	HLX_DebugLogDomPair("forced_pair_reverse", victim, dominator);
+	PrintToServer("HLX debug domination pair set: dominator=%N victim=%N", dominator, victim);
+	return Plugin_Handled;
+}
+
+stock int HLX_DebugFindFirstClientOnTeam(team)
+{
+	for (new i = 1; i <= MaxClients; i++)
+	{
+		if (IsClientInGame(i) && IsFakeClient(i) && GetClientTeam(i) == team)
+		{
+			return i;
+		}
+	}
+
+	for (new i = 1; i <= MaxClients; i++)
+	{
+		if (IsClientInGame(i) && GetClientTeam(i) == team)
+		{
+			return i;
+		}
+	}
+
+	return 0;
+}
+
+public Action:Timer_HLX_DebugAutoReproPrepare(Handle:timer)
+{
+	if (!g_bDominationAutoRepro)
+	{
+		return Plugin_Stop;
+	}
+
+	LogToFileEx(g_sDominationDebugLog, "autorepro_prepare");
+	ServerCommand("bot_kick");
+	ServerCommand("bot_add_t");
+	ServerCommand("bot_add_ct");
+	ServerCommand("bot_add_t");
+	ServerCommand("bot_add_ct");
+	ServerExecute();
+	CreateTimer(4.0, Timer_HLX_DebugAutoReproRun, _, TIMER_FLAG_NO_MAPCHANGE);
+	return Plugin_Stop;
+}
+
+public Action:Timer_HLX_DebugAutoReproRun(Handle:timer)
+{
+	if (!g_bDominationAutoRepro)
+	{
+		return Plugin_Stop;
+	}
+
+	new dominator = HLX_DebugFindFirstClientOnTeam(CS_TEAM_CT);
+	new victim = HLX_DebugFindFirstClientOnTeam(CS_TEAM_T);
+	if (dominator <= 0 || victim <= 0)
+	{
+		LogToFileEx(g_sDominationDebugLog, "autorepro_blocked missing_players dominator=%d victim=%d", dominator, victim);
+		CreateTimer(4.0, Timer_HLX_DebugAutoReproRun, _, TIMER_FLAG_NO_MAPCHANGE);
+		return Plugin_Stop;
+	}
+
+	LogToFileEx(g_sDominationDebugLog, "autorepro_selected dominator=%N dominator_userid=%d victim=%N victim_userid=%d", dominator, GetClientUserId(dominator), victim, GetClientUserId(victim));
+	if (HasEntProp(dominator, Prop_Send, "m_bPlayerDominated"))
+	{
+		SetEntProp(dominator, Prop_Send, "m_bPlayerDominated", 1, 1, victim);
+	}
+	if (HasEntProp(victim, Prop_Send, "m_bPlayerDominatingMe"))
+	{
+		SetEntProp(victim, Prop_Send, "m_bPlayerDominatingMe", 1, 1, dominator);
+	}
+
+	HLX_DebugLogDomPair("autorepro_before_swap", dominator, victim);
+	HLX_DebugLogDomPair("autorepro_before_swap_reverse", victim, dominator);
+	swap_player(dominator);
+	HLX_DebugLogDomPair("autorepro_after_swap", dominator, victim);
+	HLX_DebugLogDomPair("autorepro_after_swap_reverse", victim, dominator);
+	g_bDominationAutoRepro = false;
+	return Plugin_Stop;
+}
+
+void ResetDominationStateForClient(int client)
+{
+    if (!IsClientInGame(client))
+    {
+        return;
+    }
+
+    bool hasDominated = HasEntProp(client, Prop_Send, "m_bPlayerDominated");
+    bool hasDominatingMe = HasEntProp(client, Prop_Send, "m_bPlayerDominatingMe");
+
+    if (!hasDominated && !hasDominatingMe)
+    {
+        return;
+    }
+
+    if (g_bDominationDebug)
+    {
+        HLX_DebugLogDomState("before_reset", client);
+    }
+
+    for (int other = 1; other <= MaxClients; other++)
+    {
+        if (other == client || !IsClientInGame(other))
+        {
+            continue;
+        }
+
+        if (hasDominated)
+        {
+            SetEntProp(client, Prop_Send, "m_bPlayerDominated", 0, 1, other);
+        }
+
+        if (hasDominatingMe)
+        {
+            SetEntProp(client, Prop_Send, "m_bPlayerDominatingMe", 0, 1, other);
+        }
+
+        if (HasEntProp(other, Prop_Send, "m_bPlayerDominated"))
+        {
+            SetEntProp(other, Prop_Send, "m_bPlayerDominated", 0, 1, client);
+        }
+
+        if (HasEntProp(other, Prop_Send, "m_bPlayerDominatingMe"))
+        {
+            SetEntProp(other, Prop_Send, "m_bPlayerDominatingMe", 0, 1, client);
+        }
+    }
+
+    if (g_bDominationDebug)
+    {
+        HLX_DebugLogDomState("after_reset", client);
+    }
+}
+
+bool GiveC4ToTOrSpawn()
+{
+    // Prefer giving C4 to a living T player.
+    for (int i = 1; i <= MaxClients; i++)
+    {
+        if (IsClientInGame(i) && IsPlayerAlive(i) && GetClientTeam(i) == CS_TEAM_T)
+        {
+            int given = GivePlayerItem(i, "weapon_c4");
+            return (given > 0);
+        }
+    }
+
+    // No living T found: spawn C4 at a T spawn point.
+    int spawn = -1;
+    float origin[3];
+    float angles[3];
+
+    // Try to find a random info_player_terrorist
+    int count = 0;
+    int ent = -1;
+    while ((ent = FindEntityByClassname(ent, "info_player_terrorist")) != -1)
+    {
+        count++;
+        if (GetURandomInt() % count == 0)
+        {
+            spawn = ent; // reservoir sampling to pick one
+        }
+    }
+
+    if (spawn != -1)
+    {
+        GetEntPropVector(spawn, Prop_Send, "m_vecOrigin", origin);
+        GetEntPropVector(spawn, Prop_Send, "m_angRotation", angles);
+    }
+    else
+    {
+        // Fallback: center of map if no T spawns found.
+        origin[0] = origin[1] = origin[2] = 0.0;
+        angles[0] = angles[1] = angles[2] = 0.0;
+    }
+
+    int c4 = CreateEntityByName("weapon_c4");
+    if (c4 <= 0) return false;
+
+    DispatchSpawn(c4);
+    TeleportEntity(c4, origin, angles, NULL_VECTOR);
+    return true;
+}
+
+swap_player(player_index)
+{
+    swap_player_internal(player_index, false);
+}
+
+swap_player_admin(player_index)
+{
+    swap_player_internal(player_index, true);
+}
+
+swap_player_internal(player_index, bool:allow_alive)
+{
+    if (!IsClientInGame(player_index))
+    {
+        return;
+    }
+
+    bool was_alive = IsPlayerAlive(player_index);
+    if (was_alive && !allow_alive)
+    {
+        PrintToServer("[HLstatsX] Refusing team swap: target is alive.");
+        if (g_bDominationDebug)
+        {
+            LogToFileEx(g_sDominationDebugLog, "swap_player_refused_alive client=%N userid=%d team=%d", player_index, GetClientUserId(player_index), GetClientTeam(player_index));
+        }
+        return;
+    }
+
+    if (g_bDominationDebug)
+    {
+        LogToFileEx(g_sDominationDebugLog, "swap_player_start client=%N userid=%d team=%d alive=%d", player_index, GetClientUserId(player_index), GetClientTeam(player_index), IsPlayerAlive(player_index));
+    }
+
+    int team = GetClientTeam(player_index);
+
+    // Detect if player currently holds C4 (slot 4, classname weapon_c4).
+    bool hadC4 = false;
+    int c4 = GetPlayerWeaponSlot(player_index, 4);
+    if (c4 > 0)
+    {
+        char cls[32];
+        GetEdictClassname(c4, cls, sizeof(cls));
+        if (StrEqual(cls, "weapon_c4", false))
+        {
+            hadC4 = true;
+
+            // Remove from player and kill the entity so it cannot drop at CT spawn.
+            RemovePlayerItem(player_index, c4);
+            AcceptEntityInput(c4, "Kill");
+        }
+    }
+
+    switch (team)
+    {
+        case CS_TEAM_CT:
+        {
+            fade_msg = StartMessageOne("Fade", player_index);
+            BfWriteShort(fade_msg, 500);
+            BfWriteShort(fade_msg, 0);        // duration
+            BfWriteShort(fade_msg, 0x0001);   // type
+            BfWriteByte(fade_msg, 255);       // red
+            BfWriteByte(fade_msg, 0);         // green
+            BfWriteByte(fade_msg, 0);         // blue
+            BfWriteByte(fade_msg, 255);       // alpha
+            EndMessage();
+
+            EmitSoundToClient(player_index, "common/warning.wav");
+            PrintCenterText(player_index, "[HlstatsX] You were switched to balance team! You are now T.");
+
+            CS_SwitchTeam(player_index, CS_TEAM_T);
+            if (allow_alive && was_alive)
+            {
+                CS_RespawnPlayer(player_index);
+            }
+
+            ResetDominationStateForClient(player_index);
+            if (g_bDominationDebug)
+            {
+                LogToFileEx(g_sDominationDebugLog, "swap_player_done client=%N userid=%d oldteam=%d newteam=%d", player_index, GetClientUserId(player_index), CS_TEAM_CT, GetClientTeam(player_index));
+            }
+        }
+
+        case CS_TEAM_T:
+        {
+            fade_msg = StartMessageOne("Fade", player_index);
+            BfWriteShort(fade_msg, 500);
+            BfWriteShort(fade_msg, 0);        // duration
+            BfWriteShort(fade_msg, 0x0001);   // type
+            BfWriteByte(fade_msg, 0);         // red
+            BfWriteByte(fade_msg, 0);         // green
+            BfWriteByte(fade_msg, 255);       // blue
+            BfWriteByte(fade_msg, 255);       // alpha
+            EndMessage();
+
+            EmitSoundToClient(player_index, "common/warning.wav");
+            PrintCenterText(player_index, "[HlstatsX] You were switched to balance team! You are now CT.");
+
+            CS_SwitchTeam(player_index, CS_TEAM_CT);
+            if (allow_alive && was_alive)
+            {
+                CS_RespawnPlayer(player_index);
+            }
+
+            // Even if the player is dead, ensure bomb is reassigned properly.
+            if (hadC4)
+            {
+                GiveC4ToTOrSpawn();
+            }
+
+            ResetDominationStateForClient(player_index);
+            if (g_bDominationDebug)
+            {
+                LogToFileEx(g_sDominationDebugLog, "swap_player_done client=%N userid=%d oldteam=%d newteam=%d", player_index, GetClientUserId(player_index), CS_TEAM_T, GetClientTeam(player_index));
+            }
+        }
+    }
+}
 
 public CreateHLstatsXMenuMain(&Handle: MenuHandle)
 {
@@ -2259,4 +2835,319 @@ stock PrintToChatRecipientsFF(const String:message[])
 			}
 		}
 	}
+}
+
+/* =========================
+ * HLstatsX KD cache (Steam3 optimized)
+ * - Receives KD via: sm_kd_set "[U:1:15900511]" "0.59" "3600"
+ * - Query via:       sm_kd_get "[U:1:15900511]"    OR sm_kd_get #userid
+ * ========================= */
+
+stock bool HLX_KD_NormalizeKey(const char[] inKey, char[] outKey, int outLen)
+{
+	int len = strcopy(outKey, outLen, inKey);
+
+	TrimString(outKey);
+
+	if (len <= 0)
+	{
+		outKey[0] = '\0';
+		return false;
+	}
+
+	if (outKey[0] == '"' || outKey[0] == '\'')
+	{
+		int q = outKey[0];
+		if (len >= 2 && outKey[len - 1] == q)
+		{
+			outKey[len - 1] = '\0';
+			strcopy(outKey, outLen, outKey[1]);
+			TrimString(outKey);
+		}
+	}
+
+	return (outKey[0] != '\0');
+}
+
+stock bool HLX_KD_GetByKey(const char[] key, float &kd, int &ttl)
+{
+	if (g_hKDCache == INVALID_HANDLE || g_hKDExpiry == INVALID_HANDLE)
+	{
+		ttl = 0;
+		kd = 0.0;
+		return false;
+	}
+
+	char norm[128];
+	if (!HLX_KD_NormalizeKey(key, norm, sizeof(norm)))
+	{
+		ttl = 0;
+		kd = 0.0;
+		return false;
+	}
+
+	int expiry = 0;
+	int kdCell = 0;
+
+	if (!GetTrieValue(g_hKDExpiry, norm, expiry))
+	{
+		ttl = 0;
+		kd = 0.0;
+		return false;
+	}
+
+	int now = GetTime();
+	if (now > expiry)
+	{
+		RemoveFromTrie(g_hKDExpiry, norm);
+		RemoveFromTrie(g_hKDCache, norm);
+
+		ttl = 0;
+		kd = 0.0;
+		return false;
+	}
+
+	if (!GetTrieValue(g_hKDCache, norm, kdCell))
+	{
+		ttl = expiry - now;
+		kd = 0.0;
+		return false;
+	}
+
+	ttl = expiry - now;
+	kd = view_as<float>(kdCell);
+	return true;
+}
+
+stock bool HLX_KD_GetClient(int client, float &kd, int &ttl)
+{
+	if (client <= 0 || client > MaxClients || !IsClientInGame(client) || IsFakeClient(client))
+	{
+		ttl = 0;
+		kd = 0.0;
+		return false;
+	}
+
+	char steam3[64];
+	GetClientAuthId(client, AuthId_Steam3, steam3, sizeof(steam3), true);
+
+	if (steam3[0] != '\0')
+	{
+		if (HLX_KD_GetByKey(steam3, kd, ttl))
+			return true;
+	}
+
+	char steam2[64];
+	GetClientAuthId(client, AuthId_Steam2, steam2, sizeof(steam2), true);
+
+	if (steam2[0] != '\0')
+	{
+		if (HLX_KD_GetByKey(steam2, kd, ttl))
+			return true;
+	}
+
+	ttl = 0;
+	kd = 0.0;
+	return false;
+}
+
+stock bool HLX_GetPreferredTeamForClient(int client, int &team)
+{
+	if (client < 1 || client > MaxClients || !IsClientInGame(client))
+	{
+		return false;
+	}
+
+	Handle enabledCvar = FindConVar("jtc_enabled");
+	if (enabledCvar == INVALID_HANDLE || !GetConVarBool(enabledCvar))
+	{
+		return false;
+	}
+
+	float kd = 0.0;
+	int ttl = 0;
+	if (!HLX_KD_GetClient(client, kd, ttl))
+	{
+		return false;
+	}
+
+	Handle thresholdCvar = FindConVar("jtc_kd_threshold");
+	float threshold = thresholdCvar != INVALID_HANDLE ? GetConVarFloat(thresholdCvar) : 2.0;
+	if (kd < threshold)
+	{
+		return false;
+	}
+
+	int current = GetClientTeam(client);
+	if (current != CS_TEAM_T && current != CS_TEAM_CT)
+	{
+		current = 0;
+	}
+
+	int tCount = 0;
+	int ctCount = 0;
+	for (int i = 1; i <= MaxClients; i++)
+	{
+		if (i == client || !IsClientInGame(i))
+		{
+			continue;
+		}
+
+		int clientTeam = GetClientTeam(i);
+		if (clientTeam == CS_TEAM_T)
+		{
+			tCount++;
+		}
+		else if (clientTeam == CS_TEAM_CT)
+		{
+			ctCount++;
+		}
+	}
+
+	// Count parity takes precedence over score preference. In particular,
+	// placing a high-KD joiner on the losing side must not create a two-player
+	// count gap or violate mp_limitteams.
+	if (tCount < ctCount)
+	{
+		team = CS_TEAM_T;
+	}
+	else if (ctCount < tCount)
+	{
+		team = CS_TEAM_CT;
+	}
+	else
+	{
+		// With equal counts, send a high-KD joiner to the currently losing side.
+		int tScore = CS_GetTeamScore(CS_TEAM_T);
+		int ctScore = CS_GetTeamScore(CS_TEAM_CT);
+		if (tScore < ctScore)
+		{
+			team = CS_TEAM_T;
+		}
+		else if (ctScore < tScore)
+		{
+			team = CS_TEAM_CT;
+		}
+		else
+		{
+			team = current != 0 ? current : (GetRandomInt(0, 1) == 0 ? CS_TEAM_T : CS_TEAM_CT);
+		}
+	}
+
+	return true;
+}
+
+public Native_HLX_GetPreferredTeam(Handle:plugin, numParams)
+{
+	int client = GetNativeCell(1);
+	int team = 0;
+	bool hasPreference = HLX_GetPreferredTeamForClient(client, team);
+	SetNativeCellRef(2, team);
+	return hasPreference;
+}
+
+public Native_HLX_KD_GetClient(Handle:plugin, numParams)
+{
+	int client = GetNativeCell(1);
+	float kd = 0.0;
+	int ttl = 0;
+	bool ok = HLX_KD_GetClient(client, kd, ttl);
+
+	SetNativeCellRef(2, view_as<int>(kd));
+	SetNativeCellRef(3, ttl);
+
+	return ok;
+}
+
+public Action:Command_HLX_KDSet(args)
+{
+	if (args < 3)
+	{
+		PrintToServer("[KD] Usage: sm_kd_set <steamid> <kd> <ttl>");
+		return Plugin_Handled;
+	}
+
+	char rawKey[128];
+	char key[128];
+	char sKD[32];
+	char sTTL[32];
+
+	GetCmdArg(1, rawKey, sizeof(rawKey));
+	GetCmdArg(2, sKD, sizeof(sKD));
+	GetCmdArg(3, sTTL, sizeof(sTTL));
+
+	if (!HLX_KD_NormalizeKey(rawKey, key, sizeof(key)))
+	{
+		PrintToServer("[KD] Invalid key: %s", rawKey);
+		return Plugin_Handled;
+	}
+
+	float kd = StringToFloat(sKD);
+	int ttl = StringToInt(sTTL);
+	if (ttl < 1) ttl = 1;
+
+	int expiry = GetTime() + ttl;
+
+	if (g_hKDCache == INVALID_HANDLE) g_hKDCache = CreateTrie();
+	if (g_hKDExpiry == INVALID_HANDLE) g_hKDExpiry = CreateTrie();
+
+	SetTrieValue(g_hKDCache, key, view_as<int>(kd), true);
+	SetTrieValue(g_hKDExpiry, key, expiry, true);
+
+	PrintToServer("[KD] Received for %s: KD=%.2f, TTL=%ds", key, kd, ttl);
+
+	return Plugin_Handled;
+}
+
+public Action:Command_HLX_KDGet(args)
+{
+	if (args < 1)
+	{
+		PrintToServer("[KD] Usage: sm_kd_get <steamid|#userid>");
+		return Plugin_Handled;
+	}
+
+	char a1[128];
+	GetCmdArg(1, a1, sizeof(a1));
+	TrimString(a1);
+
+	float kd = 0.0;
+	int ttl = 0;
+
+	if (a1[0] == '#')
+	{
+		int userid = StringToInt(a1[1]);
+		int client = GetClientOfUserId(userid);
+
+		if (HLX_KD_GetClient(client, kd, ttl))
+		{
+			char steam3[64];
+			GetClientAuthId(client, AuthId_Steam3, steam3, sizeof(steam3), true);
+			PrintToServer("[KD] %s KD=%.2f TTL=%ds", steam3, kd, ttl);
+		}
+		else
+		{
+			PrintToServer("[KD] NODATA %s", a1);
+		}
+
+		return Plugin_Handled;
+	}
+
+	char key[128];
+	if (!HLX_KD_NormalizeKey(a1, key, sizeof(key)))
+	{
+		PrintToServer("[KD] Invalid key: %s", a1);
+		return Plugin_Handled;
+	}
+
+	if (HLX_KD_GetByKey(key, kd, ttl))
+	{
+		PrintToServer("[KD] %s KD=%.2f TTL=%ds", key, kd, ttl);
+	}
+	else
+	{
+		PrintToServer("[KD] NODATA %s", key);
+	}
+
+	return Plugin_Handled;
 }

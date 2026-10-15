@@ -1008,8 +1008,14 @@ sub run_pending_team_balance
 sub bot_fill_roster_is_changing
 {
 	my ($self, $now) = @_;
-	return 0 if !$self->is_bot_fill_mode();
 	$now = time() if !defined($now);
+	my $mode_result = $self->dorcon("bot_quota_mode") // "";
+	my ($mode) = $mode_result =~ /bot_quota_mode[^\r\n]*?=\s*"?([a-z]+)/i;
+	my $mode_known = defined($mode) && $mode =~ /^(?:normal|fill|match)$/i;
+	my $dynamic_mode = defined($mode) && $mode =~ /^(?:fill|match)$/i;
+	my $vacate_result = $self->dorcon("bot_auto_vacate") // "";
+	my $auto_vacate = $vacate_result =~ /bot_auto_vacate[^\r\n]*?=\s*"?1\b/i;
+	return 0 if !$dynamic_mode && !$auto_vacate && $mode_known;
 
 	my @roster = sort map {
 		my $player = $_;
@@ -1017,7 +1023,13 @@ sub bot_fill_roster_is_changing
 		join(":", $player->{is_bot} ? 1 : 0, $player->{userid} // 0, $team);
 	} values %{$self->{srv_players}};
 	my $quota = $self->dorcon("bot_quota") // "";
-	my $signature = join("|", $quota, @roster);
+	my $delay_result = $self->dorcon("bot_join_delay") // "";
+	my $settle_seconds = 12; # Fail safe if the server's bot delay cannot be read.
+	if ($delay_result =~ /bot_join_delay[^\r\n]*?=\s*"?([0-9]+(?:\.[0-9]+)?)/i) {
+		$settle_seconds = $1 + 2;
+		$settle_seconds = 3 if $settle_seconds < 3;
+	}
+	my $signature = join("|", $mode_result, $vacate_result, $quota, $delay_result, @roster);
 
 	if (!defined($self->{ba_fill_roster_signature})
 		|| $self->{ba_fill_roster_signature} ne $signature) {
@@ -1026,7 +1038,7 @@ sub bot_fill_roster_is_changing
 		return 1;
 	}
 
-	return $now - ($self->{ba_fill_roster_stable_since} || $now) < 3;
+	return $now - ($self->{ba_fill_roster_stable_since} || $now) < $settle_seconds;
 }
 
 sub is_bot_fill_mode
@@ -1388,9 +1400,14 @@ sub get_join_team_policy
 	}
 
 	my ($ct_count, $ts_count, $reserved_ct_count, $reserved_ts_count) = (0, 0, 0, 0);
+	my $bot_fill_mode = $self->is_bot_fill_mode();
 	for my $other (values %{$self->{srv_players}}) {
 		next if $other->{userid} == $player->{userid}
 			|| ($other->{uniqueid} // "") eq $uniqueid;
+		# In fill mode bots are temporary quota occupants: a human connect can
+		# remove one asynchronously. Balance human placements against humans and
+		# pending reservations, then let round-end ATB settle the actual roster.
+		next if $bot_fill_mode && $other->{is_bot};
 		if (($other->{team} // "") eq "CT") {
 			$ct_count++;
 		} elsif (($other->{team} // "") eq "TERRORIST") {
@@ -1531,7 +1548,6 @@ sub analyze_teams
 	$self->debug_message("HLstatsX:CE - ATB: CT ($ct_count) $ct_kills:$ct_deaths  [$ct_wins - $ts_wins] $ts_kills:$ts_deaths ($ts_count) TS");
 
 	my $action_done = 0;
-	my $bot_fill_mode = $self->is_bot_fill_mode();
 	# At or below the configured population threshold only correct team counts;
 	# do not use round score to choose the players being moved.
 	my $can_balance_by_score = $self->{num_trackable_players} > $self->{minplayers};

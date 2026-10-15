@@ -8,6 +8,15 @@ our $opt_libdir = "$FindBin::Bin/../src/scripts";
 
 require "$::opt_libdir/HLstats_Server.pm";
 my $real_get_map_team_bias = \&HLstats_Server::get_map_team_bias;
+open my $event_handlers, '<', "$::opt_libdir/HLstats_EventHandlers.plib"
+	 or die "Cannot read HLstats event handlers: $!";
+my $event_source = do { local $/; <$event_handlers> };
+close $event_handlers;
+my ($connect_handler) = $event_source =~ /sub doEvent_Connect\s*\{(.*?)^\}/ms;
+die "Cannot find doEvent_Connect handler" if !defined($connect_handler);
+like($connect_handler,
+	qr/clear_join_team_reservation\(\$player\).*?get_join_team_policy\(\$player\)/s,
+	"Connect restores a pre-team-selection reservation after clearing stale state");
 
 our $g_stdin = 0;
 our $g_rcon = 1;
@@ -28,6 +37,7 @@ sub main::quoteSQL {
 		return '"bot_quota_mode" = "fill"' if $command eq "bot_quota_mode";
 		return '"bot_quota" = "6"' if $command eq "bot_quota";
 		return '"bot_join_delay" = "10"' if $command eq "bot_join_delay";
+		return '"bot_auto_vacate" = "0"' if $command eq "bot_auto_vacate";
 		return "";
 	}
 }
@@ -274,8 +284,8 @@ is($server->apply_team_balance_config_defaults({ BalanceAnalyzeRounds => "0" })-
 	} 1 .. 4;
 	$server->{srv_players}{$_->{userid}} = $_ for @joiners;
 	my @teams = map { $server->get_join_team_policy($_)->{preferred_team} } @joiners;
-	is_deeply(\@teams, [2, 3, 2, 3],
-		"pending join reservations balance a burst across current teams, including bots");
+	ok(join("", @teams) eq "2323" || join("", @teams) eq "3232",
+		"pending join reservations balance a fill-mode burst independently of transient bot teams");
 	$server->clear_join_team_reservation($joiners[0]);
 	ok(!exists $server->{jtc_join_reservations}{$joiners[0]{uniqueid}},
 		"team selection clears the pending join reservation");
@@ -387,6 +397,12 @@ $server->{srv_players} = {
 	ok(!$server->{test_analyze_count},
 		"a stable-looking roster is observed for the full settling window");
 	$server->run_pending_team_balance(1018);
+	ok(!$server->{test_analyze_count},
+		"bot join delay prevents correction before delayed fill changes can arrive");
+	$server->run_pending_team_balance(1025);
+	ok(!$server->{test_analyze_count},
+		"the fill roster remains pending until the configured delay plus safety margin");
+	$server->run_pending_team_balance(1026);
 	is($server->{test_analyze_count}, 1,
 		"the roster is analyzed after bot fill and team assignments settle");
 }
@@ -399,18 +415,18 @@ my %roster_hash = map { ("player$_", $roster[$_]) } 0 .. $#roster;
 $server->{srv_players} = \%roster_hash;
 ok($server->bot_fill_roster_is_changing(100),
 	"the first fill roster observation starts the settling window");
-ok($server->bot_fill_roster_is_changing(102),
+ok($server->bot_fill_roster_is_changing(111),
 	"the fill roster is not treated as stable too early");
-ok(!$server->bot_fill_roster_is_changing(104),
+ok(!$server->bot_fill_roster_is_changing(112),
 	"a stable observed roster settles even if bot_quota is not a reliable team-count target");
 my ($joining_bot) = grep { $_->{is_bot} } @roster;
 $joining_bot->{team} = "Unassigned";
-ok($server->bot_fill_roster_is_changing(105),
+ok($server->bot_fill_roster_is_changing(113),
 	"a connected fill bot remains unsettled until it joins a team");
 $joining_bot->{team} = "TERRORIST";
-ok($server->bot_fill_roster_is_changing(106),
+ok($server->bot_fill_roster_is_changing(114),
 	"a newly assigned fill bot restarts the settling window");
-ok(!$server->bot_fill_roster_is_changing(109),
+ok(!$server->bot_fill_roster_is_changing(126),
 	"the assigned roster settles after remaining unchanged");
 {
 	no warnings qw(redefine once);
@@ -425,7 +441,7 @@ ok(!$server->bot_fill_roster_is_changing(109),
 	$server->{srv_players} = {};
 	$server->run_pending_team_balance($server->{ba_balance_due});
 	ok($server->{ba_balance_pending}, "the old deadline cannot force a correction after a roster change");
-	$server->run_pending_team_balance($server->{ba_balance_due} + 3);
+	$server->run_pending_team_balance($server->{ba_balance_due} + 12);
 	ok(!$server->{ba_balance_pending}, "a stable observed roster releases the deferred check");
 	is($server->{test_analyze_count}, 2, "stable fill state is analyzed exactly once");
 }
@@ -699,6 +715,48 @@ ok(@switched_players == 2 && !(grep {
 		["", $_->{uniqueid}, 0, $_->{team}, 0, 0, 0, 1, $_->{userid}, $_->{is_bot}]
 	)
 } @switched_players), "corrected players are protected by the map swap lock");
+
+$server = new_server();
+$server->{num_trackable_players} = 1;
+$server->{minplayers} = 6;
+$server->{balance_ignore_bots} = 0;
+$server->{balance_switch_only_dead} = 0;
+$server->{switch_admins} = 0;
+my %two_v_four = (
+	t1 => balance_player(1, "TERRORIST", 0, 0),
+	t2 => balance_player(2, "TERRORIST", 0, 0),
+);
+for my $index (1 .. 4) {
+	$two_v_four{"ct$index"} = balance_player($index + 2, "CT", 1, 0);
+}
+$server->{srv_players} = \%two_v_four;
+$server->analyze_teams();
+acknowledge_test_swaps($server);
+is(scalar @{$server->{test_switches}}, 1,
+	"a 2v4 low-population gap is corrected with one fill bot move");
+is(scalar(grep { $_->{team} eq "TERRORIST" } values %{$server->{srv_players}}), 3,
+	"the 2v4 correction leaves a 3v3 roster");
+
+$server = new_server();
+$server->{num_trackable_players} = 1;
+$server->{minplayers} = 6;
+$server->{balance_ignore_bots} = 0;
+$server->{balance_switch_only_dead} = 0;
+$server->{switch_admins} = 0;
+my %twelve_v_fifteen;
+for my $index (1 .. 12) {
+	$twelve_v_fifteen{"t$index"} = balance_player($index, "TERRORIST", 0, 0);
+}
+for my $index (1 .. 15) {
+	$twelve_v_fifteen{"ct$index"} = balance_player($index + 12, "CT", 0, 0);
+}
+$server->{srv_players} = \%twelve_v_fifteen;
+$server->analyze_teams();
+acknowledge_test_swaps($server);
+is(scalar @{$server->{test_switches}}, 1,
+	"human-only 12v15 is corrected by one move without over-balancing the roster");
+is(scalar(grep { $_->{team} eq "TERRORIST" } values %{$server->{srv_players}}), 13,
+	"the 12v15 correction leaves the permitted 13v14 one-player gap");
 
 $server = new_server();
 $server->{num_trackable_players} = 1;
