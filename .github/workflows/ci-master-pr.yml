@@ -54,13 +54,13 @@ jobs:
       if: matrix.testenv == 'dev'
       run: |
         set -eux
-        ./test/test.sh dev 1 1
+        ./test/test.sh dev 1
 
     - name: Integration test (prod)
       if: matrix.testenv == 'prod'
       run: |
         set -eux
-        ./test/test.sh prod 1 1
+        ./test/test.sh prod 1
 
   build:
     env:
