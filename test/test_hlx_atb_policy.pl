@@ -779,6 +779,39 @@ is(scalar @{$server->{test_switches} || []}, 0,
 	"round-end count analysis includes pending team reservations without swapping assigned players");
 
 $server = new_server();
+$server->{num_trackable_players} = 6;
+$server->{minplayers} = 6;
+$server->{balance_ignore_bots} = 0;
+$server->{balance_switch_only_dead} = 1;
+$server->{switch_admins} = 1;
+my %four_v_two = (
+	ct1 => balance_player(1, "CT", 0, 0),
+	ct2 => balance_player(2, "CT", 0, 0),
+	ct3 => balance_player(3, "CT", 0, 0),
+	ct4 => balance_player(4, "CT", 0, 0),
+	ts1 => balance_player(5, "TERRORIST", 0, 0),
+	ts2 => balance_player(6, "TERRORIST", 0, 0),
+);
+$_->{map_kills} = 10 for @four_v_two{qw(ct2 ct3 ct4)};
+$four_v_two{ct1}{is_dead} = 1;
+$four_v_two{ct1}{map_kills} = 0;
+$four_v_two{ct1}{userid} = 1;
+$four_v_two{ct1}{is_bot} = 0;
+$four_v_two{ct1}{team} = "CT";
+$four_v_two{ct2}{is_dead} = 0;
+$four_v_two{ct3}{is_dead} = 0;
+$four_v_two{ct4}{is_dead} = 0;
+$server->{srv_players} = \%four_v_two;
+$server->analyze_teams();
+acknowledge_test_swaps($server);
+is(scalar @{$server->{test_switches} || []}, 1,
+	"dead-only count correction does not discard the only dead eligible player");
+is_deeply($server->{test_switches}, [1],
+	"the only eligible 4v2 target is selected while retaining the dead-only guard");
+is(scalar(grep { $_->{team} eq "CT" } values %{$server->{srv_players}}), 3,
+	"dead-only 4v2 correction leaves balanced 3v3 teams");
+
+$server = new_server();
 $server->{num_trackable_players} = 1;
 $server->{minplayers} = 6;
 $server->{balance_switch_only_dead} = 1;
@@ -790,13 +823,16 @@ for my $index (1 .. 5) {
 }
 $server->{srv_players} = \%imbalanced_roster;
 $server->analyze_teams();
+acknowledge_test_swaps($server);
 is(scalar @{$server->{test_switches} || []}, 0,
-	"round-start living players are not switched when dead-only balancing is enabled");
+	"dead-only ATB never switches living fill bots to correct a count gap");
 $_->{is_dead} = 1 for values %imbalanced_roster;
 $server->analyze_teams();
 acknowledge_test_swaps($server);
 is(scalar @{$server->{test_switches}}, 2,
-	"the next round-end analysis can correct counts after eligible players die");
+	"the same count gap is corrected once fill bots are dead");
+is(scalar(grep { $_->{team} eq "TERRORIST" } values %{$server->{srv_players}}), 3,
+	"dead fill-bot correction leaves the teams even");
 
 $server = new_server();
 $server->{map_rounds} = 12;

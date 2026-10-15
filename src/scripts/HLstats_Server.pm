@@ -1316,7 +1316,6 @@ sub switch_player
 	my ($self, $playerid, $name) = @_;
 	return 0 if !$self->{swap_command};
 	my $rcmd = $self->{player_command_hint};
-	
 	my $result = $self->dorcon($self->{swap_command}." ".$self->format_userid($playerid));
 	return 0 if !defined($result);
 	if ($self->{player_command_hint} eq "") {
@@ -1576,6 +1575,7 @@ sub analyze_teams
 		if ($can_balance_by_score && $ct_underperforming) {
 			my @bots = $bot_fill_mode ? grep { $_->[9] } @ts_players : ();
 			my @humans = $bot_fill_mode ? grep { !$_->[9] } @ts_players : @ts_players;
+			# Do not discard the first human when no fill bot is available.
 			@possible_players = (
 				sort { $a->[6] <=> $b->[6] } @bots,
 				sort { $b->[6] <=> $a->[6] } @humans,
@@ -1586,10 +1586,10 @@ sub analyze_teams
 				my @bots = sort { $a->[6] <=> $b->[6] } grep { $_->[9] } @ts_players;
 				my @humans = sort { $a->[6] <=> $b->[6] } grep { !$_->[9] } @ts_players;
 				@possible_players = (@bots, @humans);
-				shift(@possible_players) if !@bots; # retain the legacy human-protection rule
 			} else {
+				# Count correction must consider the weakest player; dead-only filtering
+				# below decides whether that player can safely be moved now.
 				@possible_players = sort { $a->[6] <=> $b->[6]} @ts_players;
-				shift(@possible_players);
 			}
 		}
 	} elsif ($ts_count + 1 < $ct_count) {
@@ -1597,6 +1597,7 @@ sub analyze_teams
 		if ($can_balance_by_score && $ts_underperforming) {
 			my @bots = $bot_fill_mode ? grep { $_->[9] } @ct_players : ();
 			my @humans = $bot_fill_mode ? grep { !$_->[9] } @ct_players : @ct_players;
+			# Do not discard the first human when no fill bot is available.
 			@possible_players = (
 				sort { $a->[6] <=> $b->[6] } @bots,
 				sort { $b->[6] <=> $a->[6] } @humans,
@@ -1607,10 +1608,9 @@ sub analyze_teams
 				my @bots = sort { $a->[6] <=> $b->[6] } grep { $_->[9] } @ct_players;
 				my @humans = sort { $a->[6] <=> $b->[6] } grep { !$_->[9] } @ct_players;
 				@possible_players = (@bots, @humans);
-				shift(@possible_players) if !@bots;
 			} else {
+				# Keep human count correction consistent with the opposite-side path.
 				@possible_players = sort { $a->[6] <=> $b->[6]} @ct_players;
-				shift(@possible_players);
 			}
 		}
 	}
@@ -1620,11 +1620,10 @@ sub analyze_teams
 			last;
 		}
 
-		if ((@{$entry}[7] == 0 && $self->{balance_switch_only_dead}) || ($self->is_admin(@{$entry}[1]) == 1 && !$self->{switch_admins})) {
-			next;
-		}
-
-		if ($self->balance_player_was_swapped($entry) || $self->balance_player_swap_pending($entry)) {
+		if ((@{$entry}[7] == 0 && $self->{balance_switch_only_dead})
+			|| ($self->is_admin(@{$entry}[1]) == 1 && !$self->{switch_admins})
+			|| $self->balance_player_was_swapped($entry)
+			|| $self->balance_player_swap_pending($entry)) {
 			next;
 		}
 		$self->messageAll("HLstatsX:CE - ATB - Player [" . @{$entry}[3] . "] " . @{$entry}[0] . " was switched to ensure an even team count.", 0, 1);
