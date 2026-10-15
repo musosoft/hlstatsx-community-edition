@@ -368,6 +368,24 @@ is($server->{ba_balance_deadline}, 1015,
 $server->note_balance_roster_change(1001);
 cmp_ok($server->{ba_balance_due}, '>=', 1002,
 	"roster changes push back the pending balance check");
+$server->schedule_team_balance(1005);
+is($server->{ba_balance_deadline}, 1015,
+	"a later round end does not reset the pending roster-settle deadline");
+
+{
+	no warnings qw(redefine once);
+	my $deadline_server = new_server();
+	$deadline_server->schedule_team_balance(1000);
+	my $deadline = $deadline_server->{ba_balance_deadline};
+	local *HLstats_Server::bot_fill_roster_is_changing = sub { 1 };
+	local *HLstats_Server::analyze_teams = sub { $_[0]->{test_analyze_count}++ };
+	$deadline_server->{ba_balance_due} = $deadline;
+	$deadline_server->run_pending_team_balance($deadline);
+	is($deadline_server->{test_analyze_count}, 1,
+		"a changing fill roster cannot postpone round-end balance beyond its deadline");
+	ok(!$deadline_server->{ba_balance_pending},
+		"deadline fallback releases the pending balance instead of polling forever");
+}
 
 my $waiting_due = $server->{ba_balance_due};
 $server->{ba_balance_due} = time() + 2;
@@ -393,18 +411,18 @@ $server->{srv_players} = {
 	$server->run_pending_team_balance(1014);
 	ok(!$server->{test_analyze_count},
 		"a delayed round-start bot kick cannot be preceded by an early swap decision");
+	$server->{ba_round_active} = 1;
 	$server->run_pending_team_balance(1015);
 	ok(!$server->{test_analyze_count},
 		"a stable-looking roster is observed for the full settling window");
 	$server->run_pending_team_balance(1018);
 	ok(!$server->{test_analyze_count},
-		"bot join delay prevents correction before delayed fill changes can arrive");
+		"a deferred check still waits while the next round is active");
+	$server->{ba_round_active} = 0;
+	$server->{ba_balance_due} = 1025;
 	$server->run_pending_team_balance(1025);
-	ok(!$server->{test_analyze_count},
-		"the fill roster remains pending until the configured delay plus safety margin");
-	$server->run_pending_team_balance(1026);
 	is($server->{test_analyze_count}, 1,
-		"the roster is analyzed after bot fill and team assignments settle");
+		"the bounded deadline analyzes the current roster after fill churn");
 }
 
 my @roster = (
@@ -440,10 +458,10 @@ ok(!$server->bot_fill_roster_is_changing(126),
 	$server->{ba_balance_deadline} = $waiting_due + 2;
 	$server->{srv_players} = {};
 	$server->run_pending_team_balance($server->{ba_balance_due});
-	ok($server->{ba_balance_pending}, "the old deadline cannot force a correction after a roster change");
+	ok(!$server->{ba_balance_pending}, "the settle deadline forces a check after repeated roster churn");
+	is($server->{test_analyze_count}, 2, "the current roster is analyzed once at the deadline");
 	$server->run_pending_team_balance($server->{ba_balance_due} + 12);
-	ok(!$server->{ba_balance_pending}, "a stable observed roster releases the deferred check");
-	is($server->{test_analyze_count}, 2, "stable fill state is analyzed exactly once");
+	is($server->{test_analyze_count}, 2, "deadline fallback does not analyze the same roster twice");
 }
 pop @roster;
 %roster_hash = map { ("player$_", $roster[$_]) } 0 .. $#roster;

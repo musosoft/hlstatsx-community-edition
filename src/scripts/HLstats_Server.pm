@@ -952,6 +952,8 @@ sub schedule_team_balance
 	my ($self, $now) = @_;
 	return if $::g_stdin != 0 || $self->{ba_enabled} == 0;
 
+	my $already_pending = $self->{ba_balance_pending};
+	my $pending_deadline = $self->{ba_balance_deadline};
 	$self->{ba_round_active} = 0;
 	$now = time() if !defined($now);
 	my $max_wait = 15;
@@ -966,8 +968,10 @@ sub schedule_team_balance
 	$self->{ba_balance_pending} = 1;
 	# Start during the round-end window; run_pending_team_balance() independently
 	# waits for a stable fill roster and refuses to analyze once a round is live.
+	# Preserve the original deadline across repeated round ends while settling.
 	$self->{ba_balance_due} = $now + 2;
-	$self->{ba_balance_deadline} = $now + $max_wait;
+	$self->{ba_balance_deadline} = $already_pending && $pending_deadline
+		? $pending_deadline : $now + $max_wait;
 }
 
 sub note_balance_roster_change
@@ -996,9 +1000,19 @@ sub run_pending_team_balance
 
 	my $recent_change = $self->{ba_roster_changed_at}
 		&& $now - $self->{ba_roster_changed_at} < 2;
-	if ($recent_change || $self->bot_fill_roster_is_changing($now)) {
+	my $deadline_reached = $self->{ba_balance_deadline}
+		&& $now >= $self->{ba_balance_deadline};
+	if ($recent_change && !$deadline_reached) {
 		$self->{ba_balance_due} = $now + 1;
 		return;
+	}
+	my $roster_changing = $self->bot_fill_roster_is_changing($now);
+	if ($roster_changing && !$deadline_reached) {
+		$self->{ba_balance_due} = $now + 1;
+		return;
+	}
+	if ($deadline_reached && ($recent_change || $roster_changing)) {
+		&::printEvent("TEAMS", "ATB roster settle deadline reached; analyzing current roster", 1);
 	}
 
 	$self->{ba_balance_pending} = 0;
