@@ -1381,14 +1381,10 @@ sub get_join_team_policy
 
 	my $kills = $player->{total_kills} || 0;
 	my $deaths = $player->{lifetime_deaths} || 0;
-	if ($kills !~ /^\d+$/ || $deaths !~ /^\d+$/) {
-		delete $self->{jtc_join_reservations}{$uniqueid};
-		return $no_policy;
-	}
-	my $kd = $kills / ($deaths > 0 ? $deaths : 1);
-	if ($kd < $self->join_team_kd_threshold()) {
-		delete $self->{jtc_join_reservations}{$uniqueid};
-		return $no_policy;
+	my $kd_locked = 0;
+	if ($kills =~ /^\d+$/ && $deaths =~ /^\d+$/) {
+		my $kd = $kills / ($deaths > 0 ? $deaths : 1);
+		$kd_locked = $kd >= $self->join_team_kd_threshold() ? 1 : 0;
 	}
 
 	my ($ct_count, $ts_count, $reserved_ct_count, $reserved_ts_count) = (0, 0, 0, 0);
@@ -1432,8 +1428,11 @@ sub get_join_team_policy
 		$preferred_team = (int(rand(2)) == 0) ? 2 : 3;
 	}
 
-	$self->{jtc_join_reservations}{$uniqueid} = $preferred_team;
-	return { preferred_team => $preferred_team, kd_locked => 1 };
+	my $player_team = uc($player->{team} // "");
+	if ($player_team ne "CT" && $player_team ne "TERRORIST" && $player_team ne "SPECTATOR") {
+		$self->{jtc_join_reservations}{$uniqueid} = $preferred_team;
+	}
+	return { preferred_team => $preferred_team, kd_locked => $kd_locked };
 }
 
 sub clear_join_team_reservation
@@ -1513,6 +1512,16 @@ sub analyze_teams
 			$ct_kills   += $Player[4];
 			$ct_deaths  += $Player[5];
 		}
+	}
+	# Join reservations model humans who have connected but have not chosen a
+	# playable team yet. Include them in parity decisions, but never as swap targets.
+	for my $player (values %{$self->{srv_players}}) {
+		next if $player->{is_bot};
+		my $team = uc($player->{team} // "");
+		next if $team eq "CT" || $team eq "TERRORIST" || $team eq "SPECTATOR";
+		my $reserved_team = $self->{jtc_join_reservations}{$player->{uniqueid} // ""} || 0;
+		$ct_count++ if $reserved_team == 3;
+		$ts_count++ if $reserved_team == 2;
 	}
 	@ct_players = sort { $b->[6] <=> $a->[6]} @ct_players;
 	@ts_players = sort { $b->[6] <=> $a->[6]} @ts_players;

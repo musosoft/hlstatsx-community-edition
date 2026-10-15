@@ -231,10 +231,20 @@ is($server->apply_team_balance_config_defaults({ BalanceAnalyzeRounds => "0" })-
 		"backend prefers the smaller team for a qualifying player, excluding that player from counts");
 	$joiner->{total_kills} = 20;
 	$joiner->{lifetime_deaths} = 20;
+	$joiner->{team} = "Unassigned";
 	$server->{jtc_enabled_checked_at} = 0;
 	$policy = $server->get_join_team_policy($joiner);
-	is_deeply($policy, { preferred_team => 0, kd_locked => 0 },
-		"backend returns no restriction when lifetime KD is below the configured threshold");
+	is_deeply($policy, { preferred_team => 2, kd_locked => 0 },
+		"below-threshold joiners still receive a balanced placement without a KD lock");
+	is($server->{jtc_join_reservations}{$joiner->{uniqueid}}, 2,
+		"non-locked joiners reserve their preferred team until selection");
+	$joiner->{team} = "SPECTATOR";
+	$server->{jtc_join_reservations}{$joiner->{uniqueid}} = 2;
+	$server->{jtc_enabled_checked_at} = 0;
+	$policy = $server->get_join_team_policy($joiner);
+	ok($policy->{preferred_team} && !$policy->{kd_locked}
+		&& !exists $server->{jtc_join_reservations}{$joiner->{uniqueid}},
+		"spectators receive a future placement but do not reserve a playable slot");
 }
 {
 	no warnings qw(redefine once);
@@ -258,7 +268,7 @@ is($server->apply_team_balance_config_defaults({ BalanceAnalyzeRounds => "0" })-
 	my @joiners = map {
 		{
 			uniqueid => "STEAM_0:1:" . (100 + $_), userid => 100 + $_,
-			is_bot => 0, total_kills => 20, lifetime_deaths => 10,
+			is_bot => 0, total_kills => 10, lifetime_deaths => 10,
 			team => "Unassigned",
 		}
 	} 1 .. 4;
@@ -689,6 +699,26 @@ ok(@switched_players == 2 && !(grep {
 		["", $_->{uniqueid}, 0, $_->{team}, 0, 0, 0, 1, $_->{userid}, $_->{is_bot}]
 	)
 } @switched_players), "corrected players are protected by the map swap lock");
+
+$server = new_server();
+$server->{num_trackable_players} = 1;
+$server->{minplayers} = 4;
+$server->{balance_ignore_bots} = 0;
+$server->{srv_players} = {
+	ct1 => balance_player(1, "CT", 0, 0),
+	ct2 => balance_player(2, "CT", 0, 0),
+	ct3 => balance_player(3, "CT", 0, 0),
+	ts1 => balance_player(4, "TERRORIST", 0, 0),
+	join1 => { is_bot => 0, uniqueid => "STEAM_0:1:71", team => "Unassigned" },
+	join2 => { is_bot => 0, uniqueid => "STEAM_0:1:72", team => "Unassigned" },
+};
+$server->{jtc_join_reservations} = {
+	"STEAM_0:1:71" => 2,
+	"STEAM_0:1:72" => 2,
+};
+$server->analyze_teams();
+is(scalar @{$server->{test_switches} || []}, 0,
+	"round-end count analysis includes pending team reservations without swapping assigned players");
 
 $server = new_server();
 $server->{num_trackable_players} = 1;
