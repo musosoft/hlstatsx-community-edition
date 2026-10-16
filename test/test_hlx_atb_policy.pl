@@ -8,6 +8,7 @@ our $opt_libdir = "$FindBin::Bin/../src/scripts";
 
 require "$::opt_libdir/HLstats_Server.pm";
 my $real_get_map_team_bias = \&HLstats_Server::get_map_team_bias;
+my $real_switch_player = \&HLstats_Server::switch_player;
 open my $event_handlers, '<', "$::opt_libdir/HLstats_EventHandlers.plib"
 	 or die "Cannot read HLstats event handlers: $!";
 my $event_source = do { local $/; <$event_handlers> };
@@ -55,6 +56,15 @@ sub main::quoteSQL {
 	sub fetchrow_array { return @{$_[0]->{row}}; }
 	sub err { return 0; }
 	sub finish { return 1; }
+}
+
+{
+	package TestCaptureRcon;
+	sub execute {
+		my ($self, $command) = @_;
+		push @{$self->{commands}}, $command;
+		return "OK";
+	}
 }
 
 {
@@ -385,6 +395,43 @@ is($server->{ba_balance_deadline}, 1015,
 		"a changing fill roster cannot postpone round-end balance beyond its deadline");
 	ok(!$deadline_server->{ba_balance_pending},
 		"deadline fallback releases the pending balance instead of polling forever");
+}
+
+{
+	my $swap_server = new_server();
+	$swap_server->{swap_command} = "hlx_sm_swap";
+	$swap_server->{player_command_hint} = "";
+	$swap_server->{player_command} = "";
+	my @commands;
+	$swap_server->{rcon_obj} = bless { commands => \@commands }, "TestCaptureRcon";
+	no warnings qw(redefine once);
+	local *HLstats_Server::switch_player = $real_switch_player;
+	ok($swap_server->switch_player(42, "alive candidate", 1),
+		"round-end ATB can request an alive-capable swap");
+	like($commands[0], qr/hlx_sm_swap\s+"42"\s+round_end/,
+		"alive capability is explicitly tagged as round-end-only at the server boundary");
+	$swap_server->switch_player(42, "dead candidate", 0);
+	unlike($commands[1], qr/round_end/,
+		"ordinary swap requests retain the dead-only plugin behavior");
+}
+
+{
+	my $round_end_server = new_server();
+	$round_end_server->schedule_team_balance(2000);
+	$round_end_server->{ba_balance_due} = 2000;
+	my @analysis_modes;
+	no warnings qw(redefine once);
+	local *HLstats_Server::analyze_teams = sub { push @analysis_modes, $_[1] };
+	local *HLstats_Server::bot_fill_roster_is_changing = sub { 0 };
+	$round_end_server->run_pending_team_balance(2000);
+	is_deeply(\@analysis_modes, [1],
+		"a scheduled round-end analysis explicitly enables the alive-safe candidate path");
+	$round_end_server->{ba_balance_pending} = 1;
+	$round_end_server->{ba_balance_due} = 2001;
+	$round_end_server->{ba_round_active} = 1;
+	$round_end_server->run_pending_team_balance(2001);
+	is_deeply(\@analysis_modes, [1],
+		"the alive-capable path is never analyzed after round start");
 }
 
 my $waiting_due = $server->{ba_balance_due};
@@ -754,6 +801,27 @@ is(scalar @{$server->{test_switches}}, 1,
 	"a 2v4 low-population gap is corrected with one fill bot move");
 is(scalar(grep { $_->{team} eq "TERRORIST" } values %{$server->{srv_players}}), 3,
 	"the 2v4 correction leaves a 3v3 roster");
+
+$server = new_server();
+$server->{num_trackable_players} = 1;
+$server->{minplayers} = 6;
+$server->{balance_ignore_bots} = 0;
+$server->{balance_switch_only_dead} = 1;
+my %alive_two_v_five;
+for my $index (1 .. 2) {
+	$alive_two_v_five{"ct$index"} = balance_player($index, "CT", 0, 0);
+}
+for my $index (1 .. 5) {
+	$alive_two_v_five{"ts$index"} = balance_player($index + 2, "TERRORIST", 0, 0);
+	$alive_two_v_five{"ts$index"}{is_dead} = 0;
+}
+$server->{srv_players} = \%alive_two_v_five;
+$server->analyze_teams(1);
+acknowledge_test_swaps($server);
+is(scalar @{$server->{test_switches}}, 1,
+	"round-end count correction can select a living target despite the dead-only default");
+is(scalar(grep { $_->{team} eq "CT" } values %{$server->{srv_players}}), 3,
+	"the alive-safe 2v5 correction moves exactly one player to the smaller team");
 
 $server = new_server();
 $server->{num_trackable_players} = 1;

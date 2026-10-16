@@ -1016,7 +1016,7 @@ sub run_pending_team_balance
 	}
 
 	$self->{ba_balance_pending} = 0;
-	$self->analyze_teams();
+	$self->analyze_teams(1);
 }
 
 sub bot_fill_roster_is_changing
@@ -1083,11 +1083,11 @@ sub balance_player_swap_pending
 
 sub request_balance_player_swap
 {
-	my ($self, $entry, $counts_as_skill_balance) = @_;
+	my ($self, $entry, $counts_as_skill_balance, $allow_alive) = @_;
 	my $key = $self->balance_player_key($entry);
 	return 0 if $self->balance_player_was_swapped($entry)
 		|| exists $self->{ba_pending_swaps}{$key};
-	return 0 if !$self->switch_player($entry->[8], $entry->[0]);
+	return 0 if !$self->switch_player($entry->[8], $entry->[0], $allow_alive);
 
 	$self->{ba_pending_swaps}{$key} = {
 		team => $entry->[3] eq "CT" ? "TERRORIST" : "CT",
@@ -1327,10 +1327,12 @@ sub map_bias_round_is_eligible
 
 sub switch_player
 {
-	my ($self, $playerid, $name) = @_;
+	my ($self, $playerid, $name, $allow_alive) = @_;
 	return 0 if !$self->{swap_command};
 	my $rcmd = $self->{player_command_hint};
-	my $result = $self->dorcon($self->{swap_command}." ".$self->format_userid($playerid));
+	my $command = $self->{swap_command}." ".$self->format_userid($playerid);
+	$command .= " round_end" if $allow_alive;
+	my $result = $self->dorcon($command);
 	return 0 if !defined($result);
 	if ($self->{player_command_hint} eq "") {
 		$rcmd = $self->{player_command};
@@ -1485,7 +1487,7 @@ sub debug_message
 
 sub analyze_teams
 {
-	my ($self) = @_;
+	my ($self, $allow_alive) = @_;
 
 	if ($::g_stdin != 0 || $self->{ba_enabled} == 0) {
 		return;
@@ -1634,7 +1636,7 @@ sub analyze_teams
 			last;
 		}
 
-		if ((@{$entry}[7] == 0 && $self->{balance_switch_only_dead})
+		if ((@{$entry}[7] == 0 && $self->{balance_switch_only_dead} && !$allow_alive)
 			|| ($self->is_admin(@{$entry}[1]) == 1 && !$self->{switch_admins})
 			|| $self->balance_player_was_swapped($entry)
 			|| $self->balance_player_swap_pending($entry)) {
@@ -1642,7 +1644,7 @@ sub analyze_teams
 		}
 		$self->messageAll("HLstatsX:CE - ATB - Player [" . @{$entry}[3] . "] " . @{$entry}[0] . " was switched to ensure an even team count.", 0, 1);
 		if ($self->request_balance_player_swap(
-			$entry, $count_as_skill_balance && !$entry->[9]
+			$entry, $count_as_skill_balance && !$entry->[9], $allow_alive
 		)) {
 			$action_done++;
 			$needed_players--;
@@ -1684,7 +1686,7 @@ sub analyze_teams
 		if ($self->balance_player_was_swapped($entry)
 			|| $self->balance_player_swap_pending($entry)
 			|| ($bot_fill_mode && $entry->[9])
-			|| (@{$entry}[7] == 0 && $self->{balance_switch_only_dead})
+			|| (@{$entry}[7] == 0 && $self->{balance_switch_only_dead} && !$allow_alive)
 			|| ($self->is_admin(@{$entry}[1]) == 1 && !$self->{switch_admins})) {
 			next;
 		}
@@ -1697,7 +1699,7 @@ sub analyze_teams
 		if ($self->balance_player_was_swapped($entry)
 			|| $self->balance_player_swap_pending($entry)
 			|| ($bot_fill_mode && $entry->[9])
-			|| (@{$entry}[7] == 0 && $self->{balance_switch_only_dead})
+			|| (@{$entry}[7] == 0 && $self->{balance_switch_only_dead} && !$allow_alive)
 			|| ($self->is_admin(@{$entry}[1]) == 1 && !$self->{switch_admins})) {
 			next;
 		}
@@ -1708,15 +1710,15 @@ sub analyze_teams
 
 	if ($need_ct && @ct_switch_player && $need_ts && @ts_switch_player) {
 		$self->messageAll("HLstatsX:CE - ATB - Switching players [CT] " . @ct_switch_player[0] . " ⇆ [T] " . @ts_switch_player[0] . " to balance teams.", 0, 1);
-		my $ct_requested = $self->request_balance_player_swap(\@ct_switch_player, 1);
-		my $ts_requested = $self->request_balance_player_swap(\@ts_switch_player, 1);
+		my $ct_requested = $self->request_balance_player_swap(\@ct_switch_player, 1, $allow_alive);
+		my $ts_requested = $self->request_balance_player_swap(\@ts_switch_player, 1, $allow_alive);
 		return if !$ct_requested && !$ts_requested;
 	} elsif ($need_ct && @ct_switch_player && !$need_ts) {
 		$self->messageAll("HLstatsX:CE - ATB - Player [CT] " . @ct_switch_player[0] . " was switched to balance teams.", 0, 1);
-		return if !$self->request_balance_player_swap(\@ct_switch_player, 1);
+		return if !$self->request_balance_player_swap(\@ct_switch_player, 1, $allow_alive);
 	} elsif ($need_ts && @ts_switch_player && !$need_ct) {
 		$self->messageAll("HLstatsX:CE - ATB - Player [T] " . @ts_switch_player[0] . " was switched to balance teams.", 0, 1);
-		return if !$self->request_balance_player_swap(\@ts_switch_player, 1);
+		return if !$self->request_balance_player_swap(\@ts_switch_player, 1, $allow_alive);
 	} else {
 		# No players found or needed to switch.
 		return;
