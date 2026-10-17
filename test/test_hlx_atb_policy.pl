@@ -38,6 +38,10 @@ sub main::quoteSQL {
 		return '"bot_quota_mode" = "fill"' if $command eq "bot_quota_mode";
 		return '"bot_quota" = "6"' if $command eq "bot_quota";
 		return '"bot_join_delay" = "10"' if $command eq "bot_join_delay";
+		return "" if $command eq "mp_round_restart_delay"
+			&& $self->{restart_delay_unavailable};
+		return '"mp_round_restart_delay" = "' . ($self->{restart_delay} // 5) . '"'
+			if $command eq "mp_round_restart_delay";
 		return '"bot_auto_vacate" = "0"' if $command eq "bot_auto_vacate";
 		return "";
 	}
@@ -372,15 +376,21 @@ $server->schedule_team_balance(1000);
 ok($server->{ba_balance_pending}, "round-end schedules a deferred balance");
 is($server->{ba_balance_due}, 1002,
 	"fill mode begins checking within the round-end window");
-is($server->{ba_balance_deadline}, 1015,
-	"fill roster stabilization retains a bounded deadline");
+is($server->{ba_balance_deadline}, 1004,
+	"fill roster settling is capped before the restart-delay swap window closes");
 
 $server->note_balance_roster_change(1001);
 cmp_ok($server->{ba_balance_due}, '>=', 1002,
 	"roster changes push back the pending balance check");
 $server->schedule_team_balance(1005);
-is($server->{ba_balance_deadline}, 1015,
+is($server->{ba_balance_deadline}, 1004,
 	"a later round end does not reset the pending roster-settle deadline");
+
+my $fallback_server = new_server();
+$fallback_server->{rcon_obj}{restart_delay_unavailable} = 1;
+$fallback_server->schedule_team_balance(2000);
+is($fallback_server->{ba_balance_deadline}, 2004,
+	"a failed restart-delay query still uses the safe bounded fallback");
 
 {
 	no warnings qw(redefine once);
@@ -444,6 +454,7 @@ is($server->{ba_balance_due}, $waiting_due + 1,
 	"unsettled fill roster is polled without blocking the log loop");
 
 $server = new_server();
+$server->{rcon_obj}{restart_delay} = 20;
 $server->schedule_team_balance(1000);
 $server->{srv_players} = {
 	bot => { is_bot => 1, team => "Unassigned", userid => 99 },

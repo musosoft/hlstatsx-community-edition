@@ -959,10 +959,16 @@ sub schedule_team_balance
 	my $max_wait = 15;
 	my $fill_mode = $self->is_bot_fill_mode();
 	if ($fill_mode) {
-		my $delay = $self->dorcon("bot_join_delay");
-		if (defined($delay) && $delay =~ /bot_join_delay[^\r\n]*?=\s*"?(\d+)/i
-			&& $1 + 5 > $max_wait) {
-			$max_wait = $1 + 5;
+		# Keep a conservative bound even if the restart-delay query fails.
+		$max_wait = 4;
+		my $restart_delay = $self->dorcon("mp_round_restart_delay");
+		if (defined($restart_delay)
+			&& $restart_delay =~ /mp_round_restart_delay[^\r\n]*?=\s*"?([0-9]+(?:\.[0-9]+)?)/i) {
+			# The SourceMod swap plugin applies queued swaps just before this
+			# restart-delay window closes. Don't let bot settling defer analysis
+			# beyond that window; leave one second for the subsequent timer/RCON path.
+			$max_wait = $1 - 1;
+			$max_wait = 2 if $max_wait < 2;
 		}
 	}
 	$self->{ba_balance_pending} = 1;
