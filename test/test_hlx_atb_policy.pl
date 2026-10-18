@@ -420,6 +420,25 @@ is($fallback_server->{ba_balance_deadline}, 2004,
 }
 
 {
+	no warnings qw(redefine once);
+	my $late_join_server = new_server();
+	$late_join_server->{srv_players} = {
+		player => { is_bot => 0, team => "CT", userid => 7 },
+	};
+	$late_join_server->schedule_team_balance(2000);
+	$late_join_server->bot_fill_roster_is_changing(2001);
+	local *HLstats_Server::analyze_teams = sub { $_[0]->{test_analyze_count}++ };
+	$late_join_server->{srv_players}{player}{team} = "TERRORIST";
+	$late_join_server->note_balance_roster_change(2002);
+	$late_join_server->run_pending_team_balance(2003);
+	ok(!$late_join_server->{test_analyze_count},
+		"ATB observes a late team change before deciding whether to balance");
+	$late_join_server->run_pending_team_balance(2004);
+	is($late_join_server->{test_analyze_count}, 1,
+		"a roster stable for one second uses the remaining prestart window");
+}
+
+{
 	my $swap_server = new_server();
 	$swap_server->{swap_command} = "hlx_sm_swap";
 	$swap_server->{player_command_hint} = "";
@@ -504,18 +523,16 @@ my %roster_hash = map { ("player$_", $roster[$_]) } 0 .. $#roster;
 $server->{srv_players} = \%roster_hash;
 ok($server->bot_fill_roster_is_changing(100),
 	"the first fill roster observation starts the settling window");
-ok($server->bot_fill_roster_is_changing(101),
-	"a roster remains unsettled during the short local observation window");
-ok(!$server->bot_fill_roster_is_changing(102),
+ok(!$server->bot_fill_roster_is_changing(101),
 	"a locally stable roster settles without a blocking cvar RCON round trip");
 my ($joining_bot) = grep { $_->{is_bot} } @roster;
 $joining_bot->{team} = "Unassigned";
 ok($server->bot_fill_roster_is_changing(113),
 	"a connected fill bot remains unsettled until it joins a team");
 $joining_bot->{team} = "TERRORIST";
-ok($server->bot_fill_roster_is_changing(114),
+ok($server->bot_fill_roster_is_changing(113.5),
 	"a newly assigned fill bot restarts the settling window");
-ok(!$server->bot_fill_roster_is_changing(126),
+ok(!$server->bot_fill_roster_is_changing(114.5),
 	"the assigned roster settles after remaining unchanged");
 {
 	no warnings qw(redefine once);

@@ -975,7 +975,9 @@ sub note_balance_roster_change
 	$self->{ba_round_bias_eligible} = 0 if $self->{ba_round_bias_active};
 	$self->{ba_roster_changed_at} = $now;
 	if ($self->{ba_balance_pending}) {
-		my $new_due = $now + 2;
+		# Recheck after one second so a late but completed team selection can
+		# still be observed before the SourceMod prestart swap window closes.
+		my $new_due = $now + 1;
 		$new_due = $self->{ba_balance_due}
 			if $self->{ba_balance_due} > $now && $self->{ba_balance_due} > $new_due;
 		$self->{ba_balance_due} = $new_due;
@@ -992,7 +994,7 @@ sub run_pending_team_balance
 	$self->expire_pending_balance_swaps($now);
 
 	my $recent_change = $self->{ba_roster_changed_at}
-		&& $now - $self->{ba_roster_changed_at} < 2;
+		&& $now - $self->{ba_roster_changed_at} < 1;
 	my $deadline_reached = $self->{ba_balance_deadline}
 		&& $now >= $self->{ba_balance_deadline};
 	if ($recent_change && !$deadline_reached) {
@@ -1035,7 +1037,7 @@ sub bot_fill_roster_is_changing
 		return 1;
 	}
 
-	return $now - ($self->{ba_fill_roster_stable_since} || $now) < 2;
+	return $now - ($self->{ba_fill_roster_stable_since} || $now) < 1;
 }
 
 sub is_bot_fill_mode
