@@ -1018,7 +1018,12 @@ sub run_pending_team_balance
 		return;
 	}
 	if ($deadline_reached && ($recent_change || $roster_changing)) {
-		&::printEvent("TEAMS", "ATB roster settle deadline reached; analyzing current roster", 1);
+		&::printEvent("TEAMS", "ATB roster unsettled at deadline; retrying at next round end", 1);
+		# A last-second team selection or fill-bot move can make the event-driven
+		# roster stale while a count-based swap is being dispatched. Skip this
+		# window rather than risk moving another player in the wrong direction.
+		$self->{ba_balance_pending} = 0;
+		return;
 	}
 
 	$self->{ba_balance_pending} = 0;
