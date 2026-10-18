@@ -35,6 +35,7 @@ sub main::quoteSQL {
 	package TestRcon;
 	sub execute {
 		my ($self, $command) = @_;
+		push @{$self->{commands}}, $command if $self->{commands};
 		return '"bot_quota_mode" = "fill"' if $command eq "bot_quota_mode";
 		return '"bot_quota" = "6"' if $command eq "bot_quota";
 		return '"bot_join_delay" = "10"' if $command eq "bot_join_delay";
@@ -372,12 +373,15 @@ is($server->apply_team_balance_config_defaults({ BalanceAnalyzeRounds => "0" })-
 }
 
 $server = new_server();
+$server->{rcon_obj}{commands} = [];
 $server->schedule_team_balance(1000);
 ok($server->{ba_balance_pending}, "round-end schedules a deferred balance");
-is($server->{ba_balance_due}, 1002,
-	"fill mode begins checking within the round-end window");
+is($server->{ba_balance_due}, 1001,
+	"round-end begins the balance check promptly within the prestart window");
+is_deeply($server->{rcon_obj}{commands}, [],
+	"round-end scheduling does not block on synchronous cvar RCON queries");
 is($server->{ba_balance_deadline}, 1004,
-	"fill roster settling is capped before the restart-delay swap window closes");
+	"fill roster settling is capped before the prestart swap window closes");
 
 $server->note_balance_roster_change(1001);
 cmp_ok($server->{ba_balance_due}, '>=', 1002,
@@ -390,7 +394,7 @@ my $fallback_server = new_server();
 $fallback_server->{rcon_obj}{restart_delay_unavailable} = 1;
 $fallback_server->schedule_team_balance(2000);
 is($fallback_server->{ba_balance_deadline}, 2004,
-	"a failed restart-delay query still uses the safe bounded fallback");
+	"round-end scheduling keeps a safe bounded prestart deadline");
 
 {
 	no warnings qw(redefine once);
@@ -469,31 +473,27 @@ $server->{srv_players} = {
 };
 {
 	local *HLstats_Server::analyze_teams = sub { $_[0]->{test_analyze_count}++ };
-	$server->run_pending_team_balance(1010);
+	$server->run_pending_team_balance(1001);
 	ok($server->{ba_balance_pending},
-		"ATB cannot analyze before a fill-mode round-start bot adjustment");
+		"ATB begins checking immediately but waits on an unsettled local roster");
 	$server->note_balance_roster_change(1011); # bot is kicked after the human's team join
 	$server->{srv_players}{bot}{team} = "TERRORIST";
+	$server->{ba_balance_due} = 1013;
+	$server->run_pending_team_balance(1013);
+	ok(!$server->{test_analyze_count},
+		"a bot team change restarts the short local-roster settling window");
+	$server->{ba_round_active} = 1;
 	$server->run_pending_team_balance(1014);
 	ok(!$server->{test_analyze_count},
-		"a delayed round-start bot kick cannot be preceded by an early swap decision");
-	$server->{ba_round_active} = 1;
-	$server->run_pending_team_balance(1015);
-	ok(!$server->{test_analyze_count},
-		"a stable-looking roster is observed for the full settling window");
+		"a deferred balance never analyzes during the following live round");
 	$server->run_pending_team_balance(1018);
 	ok(!$server->{test_analyze_count},
-		"a deferred check still waits while the next round is active");
+		"an active-round check remains blocked without performing cvar RCON");
 	$server->{ba_round_active} = 0;
-	$server->{ba_balance_due} = 1025;
-	$server->run_pending_team_balance(1025);
-	ok(!$server->{test_analyze_count},
-		"the deadline skips count analysis while the fill roster is still changing");
-	$server->schedule_team_balance(1030);
-	$server->{ba_balance_due} = 1032;
-	$server->run_pending_team_balance(1032);
+	$server->schedule_team_balance(1015);
+	$server->run_pending_team_balance(1016);
 	is($server->{test_analyze_count}, 1,
-		"the following round end balances after fill churn has settled");
+		"the next round-end analyzes promptly after local roster stability");
 }
 
 my @roster = (
@@ -504,10 +504,10 @@ my %roster_hash = map { ("player$_", $roster[$_]) } 0 .. $#roster;
 $server->{srv_players} = \%roster_hash;
 ok($server->bot_fill_roster_is_changing(100),
 	"the first fill roster observation starts the settling window");
-ok($server->bot_fill_roster_is_changing(111),
-	"the fill roster is not treated as stable too early");
-ok(!$server->bot_fill_roster_is_changing(112),
-	"a stable observed roster settles even if bot_quota is not a reliable team-count target");
+ok($server->bot_fill_roster_is_changing(101),
+	"a roster remains unsettled during the short local observation window");
+ok(!$server->bot_fill_roster_is_changing(102),
+	"a locally stable roster settles without a blocking cvar RCON round trip");
 my ($joining_bot) = grep { $_->{is_bot} } @roster;
 $joining_bot->{team} = "Unassigned";
 ok($server->bot_fill_roster_is_changing(113),

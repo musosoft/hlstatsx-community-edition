@@ -150,8 +150,8 @@ class HLXATBSimulationTests(unittest.TestCase):
         schedule = server.split("sub schedule_team_balance", 1)[1].split(
             "sub note_balance_roster_change", 1
         )[0]
-        self.assertIn("$self->{ba_balance_due} = $now + 2", schedule)
-        self.assertIn("? $pending_deadline : $now + $max_wait", schedule)
+        self.assertIn("$self->{ba_balance_due} = $now + 1", schedule)
+        self.assertIn("? $pending_deadline : $now + 4", schedule)
         self.assertIn("my @roster = sort map", server)
         self.assertNotIn("my $expected_bots", server)
         self.assertIn("return if $::g_stdin != 0 || $self->{ba_enabled} == 0", server)

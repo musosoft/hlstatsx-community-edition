@@ -956,28 +956,15 @@ sub schedule_team_balance
 	my $pending_deadline = $self->{ba_balance_deadline};
 	$self->{ba_round_active} = 0;
 	$now = time() if !defined($now);
-	my $max_wait = 15;
-	my $fill_mode = $self->is_bot_fill_mode();
-	if ($fill_mode) {
-		# Keep a conservative bound even if the restart-delay query fails.
-		$max_wait = 4;
-		my $restart_delay = $self->dorcon("mp_round_restart_delay");
-		if (defined($restart_delay)
-			&& $restart_delay =~ /mp_round_restart_delay[^\r\n]*?=\s*"?([0-9]+(?:\.[0-9]+)?)/i) {
-			# The SourceMod swap plugin applies queued swaps just before this
-			# restart-delay window closes. Don't let bot settling defer analysis
-			# beyond that window; leave one second for the subsequent timer/RCON path.
-			$max_wait = $1 - 1;
-			$max_wait = 2 if $max_wait < 2;
-		}
-	}
 	$self->{ba_balance_pending} = 1;
-	# Start during the round-end window; run_pending_team_balance() independently
-	# waits for a stable fill roster and refuses to analyze once a round is live.
+	# Avoid synchronous RCON cvar reads here: every second spent scheduling costs
+	# the prestart window in which SourceMod will accept the requested swap.
+	# run_pending_team_balance() independently waits for a stable roster and
+	# refuses to analyze once a round is live.
 	# Preserve the original deadline across repeated round ends while settling.
-	$self->{ba_balance_due} = $now + 2;
+	$self->{ba_balance_due} = $now + 1;
 	$self->{ba_balance_deadline} = $already_pending && $pending_deadline
-		? $pending_deadline : $now + $max_wait;
+		? $pending_deadline : $now + 4;
 }
 
 sub note_balance_roster_change
@@ -1034,27 +1021,12 @@ sub bot_fill_roster_is_changing
 {
 	my ($self, $now) = @_;
 	$now = time() if !defined($now);
-	my $mode_result = $self->dorcon("bot_quota_mode") // "";
-	my ($mode) = $mode_result =~ /bot_quota_mode[^\r\n]*?=\s*"?([a-z]+)/i;
-	my $mode_known = defined($mode) && $mode =~ /^(?:normal|fill|match)$/i;
-	my $dynamic_mode = defined($mode) && $mode =~ /^(?:fill|match)$/i;
-	my $vacate_result = $self->dorcon("bot_auto_vacate") // "";
-	my $auto_vacate = $vacate_result =~ /bot_auto_vacate[^\r\n]*?=\s*"?1\b/i;
-	return 0 if !$dynamic_mode && !$auto_vacate && $mode_known;
-
 	my @roster = sort map {
 		my $player = $_;
 		my $team = $player->{team} // "";
 		join(":", $player->{is_bot} ? 1 : 0, $player->{userid} // 0, $team);
 	} values %{$self->{srv_players}};
-	my $quota = $self->dorcon("bot_quota") // "";
-	my $delay_result = $self->dorcon("bot_join_delay") // "";
-	my $settle_seconds = 12; # Fail safe if the server's bot delay cannot be read.
-	if ($delay_result =~ /bot_join_delay[^\r\n]*?=\s*"?([0-9]+(?:\.[0-9]+)?)/i) {
-		$settle_seconds = $1 + 2;
-		$settle_seconds = 3 if $settle_seconds < 3;
-	}
-	my $signature = join("|", $mode_result, $vacate_result, $quota, $delay_result, @roster);
+	my $signature = join("|", @roster);
 
 	if (!defined($self->{ba_fill_roster_signature})
 		|| $self->{ba_fill_roster_signature} ne $signature) {
@@ -1063,7 +1035,7 @@ sub bot_fill_roster_is_changing
 		return 1;
 	}
 
-	return $now - ($self->{ba_fill_roster_stable_since} || $now) < $settle_seconds;
+	return $now - ($self->{ba_fill_roster_stable_since} || $now) < 2;
 }
 
 sub is_bot_fill_mode
