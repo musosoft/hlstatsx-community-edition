@@ -1550,7 +1550,11 @@ sub analyze_teams
 	my $action_done = 0;
 	# At or below the configured population threshold only correct team counts;
 	# do not use round score to choose the players being moved.
-	my $can_balance_by_score = $self->{num_trackable_players} > $self->{minplayers};
+	# Round-end swaps are dispatched individually and can be partially refused
+	# when the SourceMod prestart window closes. Keep this path count-only so a
+	# failed half of a score pair cannot create a team-count imbalance.
+	my $can_balance_by_score = !$allow_alive
+		&& $self->{num_trackable_players} > $self->{minplayers};
 	my ($ct_excess, $ts_excess, $has_map_bias) = (0, 0, 0);
 	if ($can_balance_by_score) {
 		($ct_excess, $ts_excess, $has_map_bias) = $self->get_map_adjusted_team_excess($ct_wins, $ts_wins);

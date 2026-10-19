@@ -1029,6 +1029,46 @@ $server->{balance_start_rounds} = 7;
 $server->{balance_rounds_delay} = 3;
 $server->{balance_max_wins} = 1;
 $server->{balance_ignore_bots} = 0;
+$server->{ba_ct_wins} = 0;
+$server->{ba_ts_wins} = 7;
+%balanced_roster = ();
+for my $index (1 .. 3) {
+	$balanced_roster{"t$index"} = balance_player($index, "TERRORIST", 0, 24 - ($index * 4));
+	$balanced_roster{"ct$index"} = balance_player($index + 3, "CT", 0, ($index - 1) * 4);
+}
+$server->{srv_players} = \%balanced_roster;
+$server->analyze_teams(1);
+is(scalar @{$server->{test_switches} || []}, 0,
+	"round-end analysis does not make score-based paired swaps that can leave a count gap");
+
+$server = new_server();
+$server->{num_trackable_players} = 10;
+$server->{minplayers} = 8;
+$server->{balance_ignore_bots} = 0;
+my %round_end_count_gap;
+for my $index (1 .. 4) {
+	$round_end_count_gap{"ct$index"} = balance_player($index, "CT", 0, 0);
+}
+for my $index (5 .. 6) {
+	$round_end_count_gap{"t$index"} = balance_player($index, "TERRORIST", 0, 0);
+}
+$server->{srv_players} = \%round_end_count_gap;
+$server->analyze_teams(1);
+acknowledge_test_swaps($server);
+is(scalar @{$server->{test_switches}}, 1,
+	"round-end count correction moves one player rather than applying a score pair");
+is(scalar(grep { $_->{team} eq "CT" } values %{$server->{srv_players}}), 3,
+	"round-end count correction closes a 4v2 gap in one transfer");
+
+$server = new_server();
+$server->{map_rounds} = 12;
+$server->{num_trackable_players} = 10;
+$server->{minplayers} = 8;
+$server->{balance_analyze_rounds} = 7;
+$server->{balance_start_rounds} = 7;
+$server->{balance_rounds_delay} = 3;
+$server->{balance_max_wins} = 1;
+$server->{balance_ignore_bots} = 0;
 $server->{switch_admins} = 0;
 $server->{balance_switch_only_dead} = 0;
 $server->{ba_ct_wins} = 1;
