@@ -1062,6 +1062,26 @@ is(scalar(grep { $_->{team} eq "CT" } values %{$server->{srv_players}}), 3,
 	"round-end count correction closes a 4v2 gap in one transfer");
 
 $server = new_server();
+$server->{num_trackable_players} = 6;
+$server->{minplayers} = 4;
+$server->{balance_ignore_bots} = 0;
+$server->{balance_max_wins} = 1;
+$server->{ba_ct_wins} = 0;
+$server->{ba_ts_wins} = 5;
+my %score_aware_count_gap;
+for my $index (1 .. 4) {
+	$score_aware_count_gap{"t$index"} = balance_player($index, "TERRORIST", 0, $index * 5);
+}
+for my $index (5 .. 6) {
+	$score_aware_count_gap{"ct$index"} = balance_player($index, "CT", 0, 0);
+}
+$server->{srv_players} = \%score_aware_count_gap;
+$server->analyze_teams(1);
+acknowledge_test_swaps($server);
+is_deeply($server->{test_switches}, [4],
+	"count correction gives the losing smaller team the strongest eligible player in one transfer");
+
+$server = new_server();
 $server->{num_trackable_players} = 2;
 $server->{minplayers} = 4;
 $server->{balance_ignore_bots} = 0;

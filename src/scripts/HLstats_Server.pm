@@ -1583,6 +1583,9 @@ sub analyze_teams
 	# failed half of a score pair cannot create a team-count imbalance.
 	my $can_balance_by_score = !$allow_alive
 		&& $self->{num_trackable_players} > $self->{minplayers};
+	# At round end, allow score history to choose the one transfer needed to
+	# repair a count gap, but never run a separate paired score swap afterward.
+	my $score_aware_count_correction = $self->{num_trackable_players} > $self->{minplayers};
 	my ($ct_excess, $ts_excess, $has_map_bias) = (0, 0, 0);
 	if ($can_balance_by_score) {
 		($ct_excess, $ts_excess, $has_map_bias) = $self->get_map_adjusted_team_excess($ct_wins, $ts_wins);
@@ -1605,14 +1608,13 @@ sub analyze_teams
 
 	if ($ct_count + 1 < $ts_count) {
 		$needed_players = floor( ($ts_count - $ct_count) / 2);
-		if ($can_balance_by_score && $ct_underperforming) {
+		if ($score_aware_count_correction && $ct_underperforming) {
 			my @bots = $bot_fill_mode ? grep { $_->[9] } @ts_players : ();
+			@bots = sort { $a->[6] <=> $b->[6] } @bots;
 			my @humans = $bot_fill_mode ? grep { !$_->[9] } @ts_players : @ts_players;
+			@humans = sort { $b->[6] <=> $a->[6] } @humans;
 			# Do not discard the first human when no fill bot is available.
-			@possible_players = (
-				sort { $a->[6] <=> $b->[6] } @bots,
-				sort { $b->[6] <=> $a->[6] } @humans,
-			); # prefer a fill bot before moving a strong human
+			@possible_players = (@bots, @humans); # prefer a fill bot before moving a strong human
 			$count_as_skill_balance = 1;
 		} else {
 			if ($bot_fill_mode) {
@@ -1627,14 +1629,13 @@ sub analyze_teams
 		}
 	} elsif ($ts_count + 1 < $ct_count) {
 		$needed_players = floor( ($ct_count - $ts_count) / 2);
-		if ($can_balance_by_score && $ts_underperforming) {
+		if ($score_aware_count_correction && $ts_underperforming) {
 			my @bots = $bot_fill_mode ? grep { $_->[9] } @ct_players : ();
+			@bots = sort { $a->[6] <=> $b->[6] } @bots;
 			my @humans = $bot_fill_mode ? grep { !$_->[9] } @ct_players : @ct_players;
+			@humans = sort { $b->[6] <=> $a->[6] } @humans;
 			# Do not discard the first human when no fill bot is available.
-			@possible_players = (
-				sort { $a->[6] <=> $b->[6] } @bots,
-				sort { $b->[6] <=> $a->[6] } @humans,
-			);
+			@possible_players = (@bots, @humans);
 			$count_as_skill_balance = 1;
 		} else {
 			if ($bot_fill_mode) {
