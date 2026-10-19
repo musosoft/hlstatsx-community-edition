@@ -36,6 +36,7 @@ sub main::quoteSQL {
 	sub execute {
 		my ($self, $command) = @_;
 		push @{$self->{commands}}, $command if $self->{commands};
+		return $self->{team_counts_response} if $command eq "hlx_sm_team_counts";
 		return '"bot_quota_mode" = "fill"' if $command eq "bot_quota_mode";
 		return '"bot_quota" = "6"' if $command eq "bot_quota";
 		return '"bot_join_delay" = "10"' if $command eq "bot_join_delay";
@@ -1059,6 +1060,31 @@ is(scalar @{$server->{test_switches}}, 1,
 	"round-end count correction moves one player rather than applying a score pair");
 is(scalar(grep { $_->{team} eq "CT" } values %{$server->{srv_players}}), 3,
 	"round-end count correction closes a 4v2 gap in one transfer");
+
+$server = new_server();
+$server->{num_trackable_players} = 2;
+$server->{minplayers} = 4;
+$server->{balance_ignore_bots} = 0;
+$server->{rcon_obj}{team_counts_response} = "HLX_ATB_TEAM_COUNTS CT=2 T=4 FILL=1";
+$server->{srv_players} = {
+	ct_human => balance_player(1, "CT", 0, 0),
+	t_human => balance_player(2, "TERRORIST", 0, 0),
+};
+$server->analyze_teams(1, 1);
+acknowledge_test_swaps($server);
+is_deeply($server->{test_switches}, [2],
+	"round-end count correction includes live fill-bot counts omitted from HLstats tracking");
+
+$server = new_server();
+$server->{num_trackable_players} = 2;
+$server->{rcon_obj}{team_counts_response} = "";
+$server->{srv_players} = {
+	ct_human => balance_player(1, "CT", 0, 0),
+	t_human => balance_player(2, "TERRORIST", 0, 0),
+};
+$server->analyze_teams(1, 1);
+is(scalar @{$server->{test_switches} || []}, 0,
+	"round-end ATB skips instead of balancing against incomplete counts when SourceMod is unavailable");
 
 $server = new_server();
 $server->{map_rounds} = 12;

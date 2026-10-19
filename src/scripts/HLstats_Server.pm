@@ -550,6 +550,15 @@ sub rcon_getplayers
 	return %result;
 }
 
+sub get_live_team_counts
+{
+	my ($self) = @_;
+	my $result = $self->dorcon("hlx_sm_team_counts");
+	return if !defined($result)
+		|| $result !~ /HLX_ATB_TEAM_COUNTS\s+CT=(\d+)\s+T=(\d+)\s+FILL=([01])/;
+	return ($1 + 0, $2 + 0, $3 + 0);
+}
+
 sub track_server_load
 {
     my ($self) = @_;
@@ -1016,7 +1025,7 @@ sub run_pending_team_balance
 	}
 
 	$self->{ba_balance_pending} = 0;
-	$self->analyze_teams(1);
+	$self->analyze_teams(1, 1);
 }
 
 sub bot_fill_roster_is_changing
@@ -1472,7 +1481,7 @@ sub debug_message
 
 sub analyze_teams
 {
-	my ($self, $allow_alive) = @_;
+	my ($self, $allow_alive, $use_live_team_counts) = @_;
 
 	if ($::g_stdin != 0 || $self->{ba_enabled} == 0) {
 		return;
@@ -1499,6 +1508,7 @@ sub analyze_teams
 	my @ct_players   = ();
 
 	my $server_id   = $self->{id};
+	my $bot_fill_mode = $use_live_team_counts ? 0 : $self->is_bot_fill_mode();
 	while (my($pl, $player) = each(%{$self->{srv_players}}) )
 	{
 		if ($player->{is_bot} && $self->{balance_ignore_bots}) {
@@ -1532,13 +1542,31 @@ sub analyze_teams
 	}
 	# Join reservations model humans who have connected but have not chosen a
 	# playable team yet. Include them in parity decisions, but never as swap targets.
+	my ($reserved_ct_count, $reserved_ts_count) = (0, 0);
 	for my $player (values %{$self->{srv_players}}) {
 		next if $player->{is_bot};
 		my $team = uc($player->{team} // "");
 		next if $team eq "CT" || $team eq "TERRORIST" || $team eq "SPECTATOR";
 		my $reserved_team = $self->{jtc_join_reservations}{$player->{uniqueid} // ""} || 0;
-		$ct_count++ if $reserved_team == 3;
-		$ts_count++ if $reserved_team == 2;
+		if ($reserved_team == 3) {
+			$ct_count++;
+			$reserved_ct_count++;
+		} elsif ($reserved_team == 2) {
+			$ts_count++;
+			$reserved_ts_count++;
+		}
+	}
+	if ($use_live_team_counts) {
+		my ($live_ct_count, $live_ts_count, $live_fill_mode) = $self->get_live_team_counts();
+		if (!defined($live_ct_count) || !defined($live_ts_count) || !defined($live_fill_mode)) {
+			&::printEvent("TEAMS", "ATB live team counts unavailable; skipping this round-end window", 1);
+			return;
+		}
+		$bot_fill_mode = $live_fill_mode;
+		# The SourceMod count includes fill bots that HLstats may intentionally
+		# ignore for gameplay statistics. Preserve unassigned human reservations.
+		$ct_count = $live_ct_count + $reserved_ct_count;
+		$ts_count = $live_ts_count + $reserved_ts_count;
 	}
 	@ct_players = sort { $b->[6] <=> $a->[6]} @ct_players;
 	@ts_players = sort { $b->[6] <=> $a->[6]} @ts_players;

@@ -173,6 +173,8 @@ class HLXATBSimulationTests(unittest.TestCase):
         self.assertIn("note_balance_roster_change()", team_selection)
         self.assertIn("confirm_balance_player_swap($player)", team_selection)
         self.assertIn("run_pending_team_balance(time())", daemon)
+        self.assertIn("$self->analyze_teams(1, 1)", server)
+        self.assertIn("HLX_ATB_TEAM_COUNTS", server)
         self.assertIn("begin_map_bias_round()", events)
         self.assertIn("ba_round_bias_eligible", server)
         self.assertNotIn("select(undef, undef, undef, 4.5)", server)
