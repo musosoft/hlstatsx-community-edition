@@ -430,13 +430,44 @@ is($fallback_server->{ba_balance_deadline}, 2004,
 	$late_join_server->bot_fill_roster_is_changing(2001);
 	local *HLstats_Server::analyze_teams = sub { $_[0]->{test_analyze_count}++ };
 	$late_join_server->{srv_players}{player}{team} = "TERRORIST";
-	$late_join_server->note_balance_roster_change(2002);
+	$late_join_server->note_balance_roster_change(2002.5);
 	$late_join_server->run_pending_team_balance(2003);
 	ok(!$late_join_server->{test_analyze_count},
 		"ATB observes a late team change before deciding whether to balance");
 	$late_join_server->run_pending_team_balance(2004);
 	is($late_join_server->{test_analyze_count}, 1,
 		"a roster stable for one second uses the remaining prestart window");
+}
+
+{
+	no warnings qw(redefine once);
+	my $spectator_rejoin_server = new_server();
+	$spectator_rejoin_server->{srv_players} = {
+		muso => { is_bot => 0, team => "TERRORIST", userid => 497 },
+		t2 => { is_bot => 0, team => "TERRORIST", userid => 496 },
+		t3 => { is_bot => 0, team => "TERRORIST", userid => 493 },
+		ct1 => { is_bot => 0, team => "CT", userid => 498 },
+		ct2 => { is_bot => 0, team => "CT", userid => 495 },
+		ct3 => { is_bot => 0, team => "CT", userid => 494 },
+	};
+	$spectator_rejoin_server->bot_fill_roster_is_changing(1000);
+	# Muso leaves T for spectator; quota fill replaces him on T. On rejoin,
+	# auto-team selects CT and the fill bot is kicked, leaving 4 CT vs 2 T.
+	$spectator_rejoin_server->note_balance_roster_change(1010);
+	$spectator_rejoin_server->{srv_players}{muso}{team} = "Spectator";
+	$spectator_rejoin_server->{srv_players}{fill} = {
+		is_bot => 1, team => "TERRORIST", userid => 499,
+	};
+	$spectator_rejoin_server->note_balance_roster_change(1011);
+	$spectator_rejoin_server->{srv_players}{muso}{team} = "CT";
+	delete $spectator_rejoin_server->{srv_players}{fill};
+	$spectator_rejoin_server->note_balance_roster_change(1012);
+	$spectator_rejoin_server->schedule_team_balance(1040);
+	$spectator_rejoin_server->{ba_balance_due} = 1044;
+	local *HLstats_Server::analyze_teams = sub { $_[0]->{test_analyze_count}++ };
+	$spectator_rejoin_server->run_pending_team_balance(1044);
+	is($spectator_rejoin_server->{test_analyze_count}, 1,
+		"event-observed spectator rejoin and fill-bot churn settle before the first round-end check");
 }
 
 {
@@ -496,7 +527,7 @@ $server->{srv_players} = {
 	$server->run_pending_team_balance(1001);
 	ok($server->{ba_balance_pending},
 		"ATB begins checking immediately but waits on an unsettled local roster");
-	$server->note_balance_roster_change(1011); # bot is kicked after the human's team join
+	$server->note_balance_roster_change(1012.5); # bot is kicked after the human's team join
 	$server->{srv_players}{bot}{team} = "TERRORIST";
 	$server->{ba_balance_due} = 1013;
 	$server->run_pending_team_balance(1013);
@@ -520,6 +551,10 @@ my @roster = (
 	{ is_bot => 0, team => "CT" },
 	map { { is_bot => 1, team => "TERRORIST" } } 1 .. 5,
 );
+$server->{ba_fill_roster_signature} = undef;
+$server->{ba_fill_roster_signature_at} = 0;
+$server->{ba_fill_roster_event_at} = 0;
+$server->{ba_fill_roster_stable_since} = 0;
 my %roster_hash = map { ("player$_", $roster[$_]) } 0 .. $#roster;
 $server->{srv_players} = \%roster_hash;
 ok($server->bot_fill_roster_is_changing(100),

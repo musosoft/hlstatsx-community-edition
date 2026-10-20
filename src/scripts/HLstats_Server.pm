@@ -132,6 +132,8 @@ sub new
 	$self->{ba_eligible_ct_rounds} = 0;
 	$self->{ba_eligible_ts_rounds} = 0;
 	$self->{ba_fill_roster_signature} = undef;
+	$self->{ba_fill_roster_signature_at} = 0;
+	$self->{ba_fill_roster_event_at} = 0;
 	$self->{ba_fill_roster_stable_since} = 0;
 	$self->{jtc_enabled_checked_at} = 0;
 	$self->{jtc_enabled_cached} = 0;
@@ -908,6 +910,8 @@ sub reset_team_balance
 	$self->{ba_eligible_ct_rounds} = 0;
 	$self->{ba_eligible_ts_rounds} = 0;
 	$self->{ba_fill_roster_signature} = undef;
+	$self->{ba_fill_roster_signature_at} = 0;
+	$self->{ba_fill_roster_event_at} = 0;
 	$self->{ba_fill_roster_stable_since} = 0;
 	$self->{ba_balance_pending} = 0;
 	$self->{ba_balance_due} = 0;
@@ -983,6 +987,10 @@ sub note_balance_roster_change
 	# Disqualify the current round if its roster changes after Round_Start.
 	$self->{ba_round_bias_eligible} = 0 if $self->{ba_round_bias_active};
 	$self->{ba_roster_changed_at} = $now;
+	# The next signature poll may happen only at the round-end deadline. Keep
+	# the actual event time so already-settled churn is not mistaken for a new
+	# change when that delayed poll finally observes the updated roster.
+	$self->{ba_fill_roster_event_at} = $now;
 	if ($self->{ba_balance_pending}) {
 		# Recheck after one second so a late but completed team selection can
 		# still be observed before the SourceMod prestart swap window closes.
@@ -1041,9 +1049,15 @@ sub bot_fill_roster_is_changing
 
 	if (!defined($self->{ba_fill_roster_signature})
 		|| $self->{ba_fill_roster_signature} ne $signature) {
+		my $stable_since = $now;
+		if (defined($self->{ba_fill_roster_signature})
+			&& $self->{ba_fill_roster_event_at} > $self->{ba_fill_roster_signature_at}) {
+			$stable_since = $self->{ba_fill_roster_event_at};
+		}
 		$self->{ba_fill_roster_signature} = $signature;
-		$self->{ba_fill_roster_stable_since} = $now;
-		return 1;
+		$self->{ba_fill_roster_signature_at} = $now;
+		$self->{ba_fill_roster_stable_since} = $stable_since;
+		return $now - $stable_since < 1;
 	}
 
 	return $now - ($self->{ba_fill_roster_stable_since} || $now) < 1;
