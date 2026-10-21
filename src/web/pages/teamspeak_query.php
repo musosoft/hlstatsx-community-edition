@@ -826,7 +826,7 @@ function channelInfo($ip,$tPort,$port,$cID)
 		$html = "<tr class=\"bg1\"><td>Channel:</td></tr>\n";
 		$html .= "<tr class=\"bg1\"><td>".removeChar($name)."<br /><br /></td></tr>\n";
 		$html .= "<tr class=\"bg1\"><td>Topic:</td></tr>\n";
-		$html .= "<tr class=\"bg1\"><td>".utf8_encode(removeChar($topic))."<br /><br /></td></tr>\n";
+		$html .= "<tr class=\"bg1\"><td>".iconv('ISO-8859-1', 'UTF-8', removeChar($topic))."<br /><br /></td></tr>\n";
 		$html .= "<tr class=\"bg1\"><td>User in channel:</td></tr>\n";
 		$html .= "<tr class=\"bg1\"><td>".$cUser."/".removeChar($max)."<br /><br /></td></tr>\n";
 		$html .= "<tr class=\"bg1\"><td>Codec:</td></tr>\n";
