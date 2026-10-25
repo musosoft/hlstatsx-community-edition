@@ -82,6 +82,8 @@ echo '127.0.0.1 phpmyadmin.example.com' | sudo tee -a /etc/hosts
 
 The default `cstrike` service is Counter-Strike 1.6. To run an additional **Counter-Strike: Source** smoke-test server, set `CSS_RCON_PASSWORD` to a private value and start the optional profile with `docker compose --profile css-test up -d css`. It exposes port 27016 and forwards game logs to the included daemon. The server image does not include the curated SourceMod plugin, so this is not an ATB integration test.
 
+The read-only JSON server-location endpoint is available at `hlstats.php?mode=api_map_markers`; append `&game=css` to filter by a valid game code. It returns only public marker details and a five-minute online indicator, and is intended for map integrations rather than a stable external API contract.
+
 - [install.sql](./src/sql/install.sql) is mounted in `mysql` container which automatically installs the DB only on the first time. If you prefer not to mount `install.sql`, you may manually install the DB by logging into PHPMyAdmin and importing the `install.sql` there.
 - `traefik` serves HTTPS with a self-signed cert. All HTTP requests are redirected to HTTPS.
 

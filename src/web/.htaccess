@@ -11,7 +11,7 @@ ErrorDocument 403 /temporary403.html
     RewriteRule ^hlstats.php$ /cached/playerinfo_%1.html [L]
 
     # Catch-all to redirect complex queries
-    RewriteCond %{QUERY_STRING} !^mode=sitemap$
+    RewriteCond %{QUERY_STRING} !(^|&)mode=(sitemap|api_map_markers)(&|$) [NC]
     RewriteCond %{QUERY_STRING} .+
     RewriteRule ^hlstats.php$ /cached/default.html [L]
 </ifModule>

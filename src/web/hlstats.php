@@ -214,7 +214,8 @@ $valid_modes = array(
 	'ventrilo',
 	'updater',
 	'profile',
-	'sitemap'
+	'sitemap',
+	'api_map_markers'
 );
    
 // In docker, the updater folder will always be present, to allow
