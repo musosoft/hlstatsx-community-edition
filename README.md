@@ -19,6 +19,7 @@ Enhancements include:
 - **Fixed Problems in code**
 - **Fixed Appearance and UI issues**
 - **Opt-in responsive light and dark themes**
+- **Curated upstream integrations** — see the [source decisions](./docs/curated-edition-upstream-review.md), [feature matrix](./docs/upstream-feature-matrix.md), and [maintenance workflow](./docs/upstream-maintenance.md)
 
 Currently, this fork is being tested on **[stats.lamateam.eu](http://stats.lamateam.eu)** with a Counter-Strike: Source server. Other games need more testing. Please [Report Issues](https://github.com/musosoft/hlstatsx-community-edition/issues).
 

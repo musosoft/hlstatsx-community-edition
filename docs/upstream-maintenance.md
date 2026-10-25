@@ -1,6 +1,6 @@
 # Upstream maintenance and curation workflow
 
-This file and [`upstream-sources.json`](upstream-sources.json) are the durable curation memory. They are committed with the product so a new session or machine does not depend on shell history, temporary clones, or a particular agent context.
+This file, [`upstream-sources.json`](upstream-sources.json), and the [upstream feature matrix](upstream-feature-matrix.md) are the durable curation memory. They are committed with the product so a new session or machine does not depend on shell history, temporary clones, or a particular agent context.
 
 ## Source policy
 
