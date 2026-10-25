@@ -7,9 +7,9 @@ manifest="$repo_root/docs/upstream-sources.json"
 command -v jq >/dev/null || { echo "check-upstreams: jq is required" >&2; exit 2; }
 command -v gh >/dev/null || { echo "check-upstreams: GitHub CLI (gh) is required" >&2; exit 2; }
 
-while IFS=$'\t' read -r slug repo branch reviewed_sha strategy; do
+while IFS=$'\t' read -r slug repo branch checked_sha strategy; do
 	echo "== $repo ($branch; $strategy) =="
-	if ! comparison="$(gh api "repos/$repo/compare/$reviewed_sha...$branch" 2>/dev/null)"; then
+	if ! comparison="$(gh api "repos/$repo/compare/$checked_sha...$branch" 2>/dev/null)"; then
 		echo "  GitHub comparison failed; check repository access, pin, and API rate limits" >&2
 		continue
 	fi
@@ -28,4 +28,4 @@ while IFS=$'\t' read -r slug repo branch reviewed_sha strategy; do
 			echo "  GitHub comparison listing may be capped at 250 commits; inspect the full range separately."
 		fi
 	fi
-done < <(jq -r '.sources[] | [.slug,.repo,.branch,.reviewed_sha,.strategy] | @tsv' "$manifest")
+done < <(jq -r '.sources[] | [.slug,.repo,.branch,.checked_sha,.strategy] | @tsv' "$manifest")
