@@ -1,0 +1,87 @@
+{
+  "schema_version": 1,
+  "curated_base": "startersclan/hlstatsx-community-edition",
+  "sources": [
+    {
+      "slug": "startersclan-core",
+      "repo": "startersclan/hlstatsx-community-edition",
+      "branch": "master",
+      "reviewed_sha": "a5028a78ea8cf11d18081213cfbe6fa18f8aec3c",
+      "license": "GPL-2.0",
+      "strategy": "canonical-base",
+      "notes": "Current legacy PHP/Perl code line; compare shared history and preserve local ATB work."
+    },
+    {
+      "slug": "royal-laravel",
+      "repo": "Royal-Multi-Gamers/hlstatsx-community-edition-laravel",
+      "branch": "main",
+      "reviewed_sha": "5e43cbfa167bb9ed8d21b4feaf69858fc2227d0c",
+      "license": "GPL-2.0",
+      "strategy": "feature-reference-not-merge",
+      "notes": "Laravel 13 frontend rewrite; adapt isolated features only after schema/security compatibility review."
+    },
+    {
+      "slug": "snipezilla-web",
+      "repo": "SnipeZilla/hlstatsz-web",
+      "branch": "main",
+      "reviewed_sha": "a63ed1a6bce4023f830485bacd37c4daa9571409",
+      "license": "Apache-2.0",
+      "strategy": "design-reference-only",
+      "notes": "Separate HLstatsZ frontend/schema; do not copy code into this GPL-2-only repository without compatibility counsel."
+    },
+    {
+      "slug": "snipezilla-daemon",
+      "repo": "SnipeZilla/HLSTATS-2",
+      "branch": "main",
+      "reviewed_sha": "db2a68620e6cf510c1c2ba40882896280a7b854b",
+      "license": "NOASSERTION",
+      "strategy": "protocol-reference-only",
+      "notes": "Different daemon lineage; establish file-level license provenance and protocol parity before considering adaptation."
+    },
+    {
+      "slug": "windmill-theme",
+      "repo": "DNA-styx/HLStatsX-Windmill-Theme",
+      "branch": "main",
+      "reviewed_sha": "10e7420e33f59b280cf883730fe252d521713d99",
+      "license": "NOASSERTION",
+      "strategy": "design-reference-only",
+      "notes": "No repository license detected; implement independently from design principles, do not copy code/assets."
+    },
+    {
+      "slug": "lovasatt-core",
+      "repo": "lovasatt/hlstatsx-community-edition",
+      "branch": "master",
+      "reviewed_sha": "8e7a7af4b36b1010b049134068e5966fae876809",
+      "license": "GPL-2.0",
+      "strategy": "selective-code-review",
+      "notes": "Related legacy code; DB97-99 broad schema changes are not approved for the DB96 curated line."
+    },
+    {
+      "slug": "syntx34-core",
+      "repo": "SyntX34/hlstatsx-community-edition",
+      "branch": "cs2",
+      "reviewed_sha": "5a8b3c0036f92d7de28d0f044624e08a49de724c",
+      "license": "GPL-2.0",
+      "strategy": "selective-code-review",
+      "notes": "CS2-focused fork; inspect transport/plugin assumptions and preserve current daemon and game-specific gates."
+    },
+    {
+      "slug": "a1mdev-core",
+      "repo": "A1mDev/hlstatsx-community-edition",
+      "branch": "master",
+      "reviewed_sha": "2a59071fce2b5eecbad43b769087f598e57c76a7",
+      "license": "GPL-2.0",
+      "strategy": "selective-code-review",
+      "notes": "Related legacy fork; PDO/DI transition is not a drop-in backend migration."
+    },
+    {
+      "slug": "nide-core",
+      "repo": "NiDE-gg/hlstatsx-community-edition",
+      "branch": "master",
+      "reviewed_sha": "df9dcaae0e379d6a89c959daa275bc97bf87f129",
+      "license": "GPL-2.0",
+      "strategy": "selective-code-review",
+      "notes": "Related legacy fork; reviewed targeted fixes, but do not import DB97-120 or hard PHP floors wholesale."
+    }
+  ]
+}
