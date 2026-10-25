@@ -48,7 +48,7 @@ For support and installation notes visit http://www.hlxcommunity.com
 <br />
 <br />
 	<div id="footer">
-			<a href="http://www.hlxce.com" target="_blank"><img src="<?php echo IMAGE_PATH; ?>/footer-small.png" alt="HLstatsX Community Edition" border="0" /></a>
+			<a href="http://www.hlxce.com" target="_blank"><img src="<?php echo IMAGE_PATH; ?>/footer-small.png" alt="HLstatsX: Curated Edition" border="0" /></a>
 	</div>
 <br />
 <div class="fSmall" style="text-align:center;">
@@ -57,7 +57,7 @@ For support and installation notes visit http://www.hlxcommunity.com
 		echo 'You are currently viewing the basic version of this page, please enable JavaScript and reload the page to access full functionality.<br />';
 	}
 
-	echo 'Generated in real-time by <a href="http://www.hlxce.com" target="_blank">HLstatsX Community Edition '.$g_options['version'].'</a>';
+	echo 'Generated in real-time by <a href="http://www.hlxce.com" target="_blank">HLstatsX: Curated Edition '.$g_options['version'].'</a>';
 
 	if ($g_options['showqueries'] == 1) {
 		echo '
@@ -73,7 +73,7 @@ All images are copyrighted by their respective owners.
 
 	if (isset($_SESSION['loggedin'])) {
 
-		echo '&nbsp;[<a href="hlstats.php?logout=1">Logout</a>]';
+		echo '&nbsp;[<form method="post" action="hlstats.php" style="display:inline;margin:0;padding:0;"><input type="hidden" name="logout" value="1" />' . hlxCsrfField() . '<button type="submit" style="background:none;border:0;margin:0;padding:0;color:inherit;font:inherit;text-decoration:underline;cursor:pointer;">Logout</button></form>]';
 
 	}
 ?>
@@ -83,8 +83,8 @@ All images are copyrighted by their respective owners.
 	global $mode, $redirect_to_game;
 	if (($g_options["show_google_map"] == 1) && ($mode == "contents") && ($redirect_to_game > 0))
 	{
-		include(INCLUDE_PATH . '/google_maps.php');
-		printMap();
+		include(INCLUDE_PATH . '/openstreetmap.php');
+		hlxPrintOsmMap();
 	}
 ?>
 </body>

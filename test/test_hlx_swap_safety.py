@@ -10,7 +10,7 @@ class HLStatsXSwapSafetyTests(unittest.TestCase):
     def setUpClass(cls):
         source = SOURCE.read_text()
         cls.swap = source.split(
-            "swap_player_internal(player_index, bool:allow_alive)\n{", 1
+            "swap_player_internal(player_index, bool:allow_alive, bool:is_atb)\n{", 1
         )[1].split("public CreateHLstatsXMenuMain", 1)[0]
         cls.source = source
 
@@ -22,7 +22,7 @@ class HLStatsXSwapSafetyTests(unittest.TestCase):
     def test_only_manual_admin_swaps_can_respawn_live_targets(self):
         self.assertIn("if (allow_alive && was_alive)", self.swap)
         self.assertIn("CS_RespawnPlayer(player_index)", self.swap)
-        self.assertIn("swap_player_internal(player_index, false)", self.source)
+        self.assertIn("swap_player_internal(player_index, false, false)", self.source)
         admin_command = self.source.split("public Action sm_swap", 1)[1].split(
             "public Action:hlx_sm_redirect", 1
         )[0]

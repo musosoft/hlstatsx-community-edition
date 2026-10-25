@@ -369,12 +369,31 @@ class Table
 							$cellbody .= '<b>';
 						if ((is_numeric($colval)) && ($colval >= 1000))
 							$colval = number_format($colval);
-						$colval = nl2br(htmlspecialchars($colval, ENT_COMPAT));
-
 						if ($col->embedlink == 'yes')
-							{
-								$colval = preg_replace(array('/%A%([^ %]+)%/','/%\/A%/'), array("<a href=\"$1\">", '</a>'), $colval);
+						{
+							global $g_options;
+							$linkPrefix = $g_options['scripturl'] . '?';
+							$embeddedLinks = array();
+							$colval = preg_replace_callback('/%A%([^ %]+)%(.*?)%\/A%/s', function ($match) use ($linkPrefix, &$embeddedLinks) {
+								$text = nl2br(htmlspecialchars($match[2], ENT_COMPAT, 'UTF-8'));
+								if (strpos($match[1], $linkPrefix) === 0) {
+									$rendered = '<a href="' . htmlspecialchars($match[1], ENT_QUOTES, 'UTF-8') . '">' . $text . '</a>';
+								} else {
+									$rendered = $text;
+								}
+								$token = '__HLX_EMBED_' . count($embeddedLinks) . '_' . substr(hash('sha256', $match[0]), 0, 12) . '__';
+								$embeddedLinks[$token] = $rendered;
+								return $token;
+							}, $colval);
+							$colval = nl2br(htmlspecialchars($colval, ENT_COMPAT, 'UTF-8'));
+							foreach ($embeddedLinks as $token => $rendered) {
+								$colval = str_replace($token, $rendered, $colval);
 							}
+						}
+						else
+						{
+							$colval = nl2br(htmlspecialchars($colval, ENT_COMPAT, 'UTF-8'));
+						}
 
 						$cellbody .= $colval;
 							if ($this->showranking && $rank == 1 && $i == 1)

@@ -40,7 +40,7 @@ int g_iLanguageRequest[MAXPLAYERS + 1];
 int g_iLanguageSerial[MAXPLAYERS + 1];
 Handle g_hLanguageTimer[MAXPLAYERS + 1];
 
-#define VERSION "1.11.4"
+#define VERSION "1.13.0-CE"
 #define HLXTAG "HLstatsX:CE"
 
 enum GameType {
@@ -118,17 +118,29 @@ new Handle:g_hCustomTags;
 new Handle:fade_msg;
 new Handle:g_hKDCache	= INVALID_HANDLE;	/* key: steamid string (prefer Steam3), value: FloatToCell(kd) */
 new Handle:g_hKDExpiry	= INVALID_HANDLE;	/* key: steamid string (prefer Steam3), value: expiry epoch (int) */
+new Handle:g_hAtbAudit = INVALID_HANDLE;
+new g_iAtbAuditUserId[MAXPLAYERS+1];
+new g_iAtbAuditCashBefore[MAXPLAYERS+1];
+new bool:g_bAtbAuditHadC4[MAXPLAYERS+1];
+new bool:g_bAtbAuditC4Reassigned[MAXPLAYERS+1];
 new bool:g_bDominationDebug = false;
 new bool:g_bDominationAutoRepro = false;
+new bool:g_bRoundActive = true;
+new bool:g_bAtbSwapWindow;
+new bool:g_bAtbRosterChangedAfterRoundEnd;
+new g_iQueuedAtbSwapSerial[MAXPLAYERS+1];
+new g_iAtbExpectedTeamSerial[MAXPLAYERS+1];
+new g_iAtbExpectedTeam[MAXPLAYERS+1];
+new Handle:g_hAtbSwapTimer = INVALID_HANDLE;
 new String:g_sDominationDebugLog[PLATFORM_MAX_PATH];
 new String:g_sDominationAutoReproFlag[PLATFORM_MAX_PATH];
 
 #define SVTAGSIZE 128
 
 public Plugin:myinfo = {
-	name = "HLstatsX CE Ingame Plugin",
+	name = "HLstatsX: Curated Edition Ingame Plugin",
 	author = "psychonic",
-	description = "Provides ingame functionality for interaction from an HLstatsX CE installation",
+	description = "Provides in-game functionality for HLstatsX: Curated Edition",
 	version = VERSION,
 	url = "http://www.hlxcommunity.com"
 };
@@ -159,6 +171,13 @@ public OnPluginStart()
 	}
 
 	get_server_mod();
+	g_bRoundActive = true;
+	if (gamemod == Game_CSS)
+	{
+		HookEvent("round_start", HLstatsX_Event_RoundStart, EventHookMode_Pre);
+		HookEvent("round_end", HLstatsX_Event_RoundEnd, EventHookMode_PostNoCopy);
+		HookEvent("player_team", HLstatsX_Event_PlayerTeam, EventHookMode_Post);
+	}
 
 	CreateHLstatsXMenuMain(HLstatsXMenuMain);
 	CreateHLstatsXMenuAuto(HLstatsXMenuAuto);
@@ -173,6 +192,10 @@ public OnPluginStart()
 	RegServerCmd("hlx_sm_hint",          hlx_sm_hint);
 	RegServerCmd("hlx_sm_browse",        hlx_sm_browse);
 	RegServerCmd("hlx_sm_swap",          hlx_sm_swap);
+	if (gamemod == Game_CSS)
+	{
+		RegServerCmd("hlx_sm_team_counts", HLX_ATB_TeamCounts);
+	}
 	RegAdminCmd("sm_swap", sm_swap, ADMFLAG_BAN, "sm_swap <#userid>");
 	RegServerCmd("hlx_sm_redirect",      hlx_sm_redirect);
 	RegServerCmd("hlx_sm_player_action", hlx_sm_player_action);
@@ -222,9 +245,13 @@ public OnPluginStart()
 		}
 	}
 	
-	CreateConVar("hlxce_plugin_version", VERSION, "HLstatsX:CE Ingame Plugin", FCVAR_NOTIFY);
+	CreateConVar("hlxce_plugin_version", VERSION, "HLstatsX: Curated Edition Ingame Plugin", FCVAR_NOTIFY);
 	CreateConVar("hlxce_version", "", "HLstatsX:CE", FCVAR_NOTIFY);
 	CreateConVar("hlxce_webpage", "http://www.hlxcommunity.com", "http://www.hlxcommunity.com", FCVAR_NOTIFY);
+	if (gamemod == Game_CSS)
+	{
+		g_hAtbAudit = CreateConVar("hlx_atb_audit", "1", "Log compact diagnostics for ATB live swaps", _, true, 0.0, true, 1.0);
+	}
 	
 	hlx_block_chat_commands = CreateConVar("hlx_block_commands", "1", "If activated HLstatsX commands are blocked from the chat area");
 	hlx_message_prefix = CreateConVar("hlx_message_prefix", "", "Define the prefix displayed on every HLstatsX ingame message");
@@ -298,6 +325,7 @@ public HLXSettingsMenu(client, CookieMenuAction:action, any:info, String:buffer[
 
 public OnMapStart()
 {
+	g_bRoundActive = true;
 	PrecacheSound("common/warning.wav");
 	GetTeams(gamemod == Game_INSMOD);
 
@@ -310,6 +338,15 @@ public OnMapStart()
 			find_player_team_slot(4);
 		}
 	}
+}
+
+public OnMapEnd()
+{
+	g_bRoundActive = true;
+	g_bAtbSwapWindow = false;
+	g_hAtbSwapTimer = INVALID_HANDLE;
+	for (new i = 1; i <= MaxClients; i++)
+		g_iQueuedAtbSwapSerial[i] = 0;
 }
 
 bool:BTagsSupported()
@@ -879,6 +916,8 @@ stock validate_team_colors()
 
 public OnClientDisconnect(client)
 {
+	if (gamemod == Game_CSS && !g_bRoundActive)
+		HLX_ATB_InvalidateQueuedSwaps("client_disconnected");
 	HLX_ClearLanguageRequest(client);
 	if (g_bTrackColors4Chat && client > 0 && IsClientInGame(client))
 	{
@@ -1820,6 +1859,98 @@ public Action:hlx_sm_browse(args)
 }
 
 
+public Action:HLX_ATB_TeamCounts(args)
+{
+	new ct_count = 0;
+	new t_count = 0;
+	new bool:fill_mode = false;
+
+	if (gamemod == Game_CSS)
+	{
+		decl String:quota_mode_name[16];
+		new Handle:quota_mode = FindConVar("bot_quota_mode");
+		if (quota_mode != INVALID_HANDLE)
+		{
+			GetConVarString(quota_mode, quota_mode_name, sizeof(quota_mode_name));
+			fill_mode = StrEqual(quota_mode_name, "fill", false);
+		}
+
+		for (new client = 1; client <= MaxClients; client++)
+		{
+			if (!IsClientInGame(client))
+				continue;
+
+			new team = GetClientTeam(client);
+			if (team == CS_TEAM_CT)
+				ct_count++;
+			else if (team == CS_TEAM_T)
+				t_count++;
+		}
+	}
+
+	// HLstats requests this live snapshot immediately before planning round-end
+	// count corrections. Roster churn before the snapshot is reflected in these
+	// counts; only churn after it should invalidate the resulting requests.
+	if (!g_bRoundActive)
+	{
+		for (new i = 1; i <= MaxClients; i++)
+			g_iQueuedAtbSwapSerial[i] = 0;
+		g_bAtbRosterChangedAfterRoundEnd = false;
+	}
+
+	PrintToServer("HLX_ATB_TEAM_COUNTS CT=%d T=%d FILL=%d", ct_count, t_count, fill_mode);
+	return Plugin_Handled;
+}
+
+stock void HLX_ATB_InvalidateQueuedSwaps(const char[] reason)
+{
+	if (g_bRoundActive)
+		return;
+
+	g_bAtbRosterChangedAfterRoundEnd = true;
+	for (new client = 1; client <= MaxClients; client++)
+		g_iQueuedAtbSwapSerial[client] = 0;
+	if (g_hAtbAudit != INVALID_HANDLE && GetConVarBool(g_hAtbAudit))
+		LogToGame("[HLX-ATB-AUDIT] discarded queued swaps reason=%s", reason);
+}
+
+stock bool:HLX_ATB_IsCountCorrectionValid(client)
+{
+	if (client <= 0 || !IsClientInGame(client))
+		return false;
+
+	new ct_count = 0;
+	new t_count = 0;
+	for (new i = 1; i <= MaxClients; i++)
+	{
+		if (!IsClientInGame(i))
+			continue;
+		new team = GetClientTeam(i);
+		if (team == CS_TEAM_CT)
+			ct_count++;
+		else if (team == CS_TEAM_T)
+			t_count++;
+	}
+
+	new client_team = GetClientTeam(client);
+	return (ct_count - t_count > 1 && client_team == CS_TEAM_CT)
+		|| (t_count - ct_count > 1 && client_team == CS_TEAM_T);
+}
+
+stock void HLX_ATB_ApplyCountCorrection(client)
+{
+	new old_team = GetClientTeam(client);
+	new new_team = old_team == CS_TEAM_CT ? CS_TEAM_T : CS_TEAM_CT;
+	g_iAtbExpectedTeamSerial[client] = GetClientSerial(client);
+	g_iAtbExpectedTeam[client] = new_team;
+	swap_player_internal(client, true, true);
+	if (GetClientTeam(client) == old_team)
+	{
+		g_iAtbExpectedTeamSerial[client] = 0;
+		g_iAtbExpectedTeam[client] = 0;
+	}
+}
+
 public Action:hlx_sm_swap(args)
 {
 	if (args < 1)
@@ -1843,10 +1974,122 @@ public Action:hlx_sm_swap(args)
 		new player_index = GetClientOfUserId(client);
 		if (player_index > 0 && IsClientInGame(player_index))
 		{
-			swap_player(player_index);
+			decl String:swap_window[32];
+			GetCmdArg(2, swap_window, sizeof(swap_window));
+			if (StrEqual(swap_window, "round_end", false))
+			{
+				if (g_bRoundActive)
+				{
+					if (g_hAtbAudit != INVALID_HANDLE && GetConVarBool(g_hAtbAudit))
+						LogToGame("[HLX-ATB-AUDIT] refused userid=%d reason=round_active", client);
+					return Plugin_Handled;
+				}
+				if (g_bAtbSwapWindow)
+				{
+					if (g_bAtbRosterChangedAfterRoundEnd
+						|| !HLX_ATB_IsCountCorrectionValid(player_index))
+					{
+						if (g_hAtbAudit != INVALID_HANDLE && GetConVarBool(g_hAtbAudit))
+							LogToGame("[HLX-ATB-AUDIT] refused userid=%d reason=stale_count_snapshot", client);
+						return Plugin_Handled;
+					}
+					// Revalidate the direction against the live roster in the final
+					// prestart slice; queued requests are only hints from HLstats.
+					HLX_ATB_ApplyCountCorrection(player_index);
+				}
+				else
+				{
+					g_iQueuedAtbSwapSerial[player_index] = GetClientSerial(player_index);
+					if (g_hAtbAudit != INVALID_HANDLE && GetConVarBool(g_hAtbAudit))
+						LogToGame("[HLX-ATB-AUDIT] queued userid=%d reason=await_restart_window", client);
+				}
+			}
+			else
+			{
+				swap_player(player_index);
+			}
 		}
 	}
 	return Plugin_Handled;
+}
+
+public Action:HLstatsX_Event_RoundStart(Handle:event, const String:name[], bool:dontBroadcast)
+{
+	g_bRoundActive = true;
+	g_bAtbSwapWindow = false;
+	for (new i = 1; i <= MaxClients; i++)
+	{
+		g_iQueuedAtbSwapSerial[i] = 0;
+		g_iAtbExpectedTeamSerial[i] = 0;
+		g_iAtbExpectedTeam[i] = 0;
+	}
+	return Plugin_Continue;
+}
+
+public Action:HLstatsX_Event_RoundEnd(Handle:event, const String:name[], bool:dontBroadcast)
+{
+	g_bRoundActive = false;
+	g_bAtbSwapWindow = false;
+	g_bAtbRosterChangedAfterRoundEnd = false;
+	new Handle:restart_delay = FindConVar("mp_round_restart_delay");
+	new Float:delay = restart_delay != INVALID_HANDLE ? GetConVarFloat(restart_delay) : 5.0;
+	delay -= 0.1;
+	if (delay < 0.05)
+		delay = 0.05;
+	g_hAtbSwapTimer = CreateTimer(delay, Timer_HLX_ATBSwapWindow, _, TIMER_FLAG_NO_MAPCHANGE);
+	return Plugin_Continue;
+}
+
+public Action:HLstatsX_Event_PlayerTeam(Handle:event, const String:name[], bool:dontBroadcast)
+{
+	new client = GetClientOfUserId(GetEventInt(event, "userid"));
+	if (client > 0
+		&& g_iAtbExpectedTeamSerial[client] == GetClientSerial(client)
+		&& g_iAtbExpectedTeam[client] == GetClientTeam(client))
+	{
+		g_iAtbExpectedTeamSerial[client] = 0;
+		g_iAtbExpectedTeam[client] = 0;
+		return Plugin_Continue;
+	}
+	HLX_ATB_InvalidateQueuedSwaps("player_team");
+	return Plugin_Continue;
+}
+
+public OnClientConnected(client)
+{
+	if (gamemod == Game_CSS && !g_bRoundActive)
+		HLX_ATB_InvalidateQueuedSwaps("client_connected");
+}
+
+public Action:Timer_HLX_ATBSwapWindow(Handle:timer)
+{
+	if (g_hAtbSwapTimer != timer)
+		return Plugin_Stop;
+	g_hAtbSwapTimer = INVALID_HANDLE;
+	if (g_bRoundActive)
+		return Plugin_Stop;
+	g_bAtbSwapWindow = true;
+	if (g_bAtbRosterChangedAfterRoundEnd)
+	{
+		for (new i = 1; i <= MaxClients; i++)
+			g_iQueuedAtbSwapSerial[i] = 0;
+		if (g_hAtbAudit != INVALID_HANDLE && GetConVarBool(g_hAtbAudit))
+			LogToGame("[HLX-ATB-AUDIT] skipped queued swaps reason=roster_changed");
+		return Plugin_Stop;
+	}
+	for (new i = 1; i <= MaxClients; i++)
+	{
+		new serial = g_iQueuedAtbSwapSerial[i];
+		if (serial == 0)
+			continue;
+		g_iQueuedAtbSwapSerial[i] = 0;
+		new client = GetClientFromSerial(serial);
+		if (client > 0 && IsClientInGame(client) && HLX_ATB_IsCountCorrectionValid(client))
+			HLX_ATB_ApplyCountCorrection(client);
+		else if (client > 0 && g_hAtbAudit != INVALID_HANDLE && GetConVarBool(g_hAtbAudit))
+			LogToGame("[HLX-ATB-AUDIT] refused userid=%d reason=count_no_longer_unbalanced", GetClientUserId(client));
+	}
+	return Plugin_Stop;
 }
 
 
@@ -2477,23 +2720,25 @@ bool GiveC4ToTOrSpawn()
 
 swap_player(player_index)
 {
-    swap_player_internal(player_index, false);
+	swap_player_internal(player_index, false, false);
 }
 
 swap_player_admin(player_index)
 {
-    swap_player_internal(player_index, true);
+	swap_player_internal(player_index, true, false);
 }
 
-swap_player_internal(player_index, bool:allow_alive)
+swap_player_internal(player_index, bool:allow_alive, bool:is_atb)
 {
     if (!IsClientInGame(player_index))
     {
         return;
     }
 
-    bool was_alive = IsPlayerAlive(player_index);
-    if (was_alive && !allow_alive)
+	bool was_alive = IsPlayerAlive(player_index);
+	int user_id = GetClientUserId(player_index);
+	int old_team = GetClientTeam(player_index);
+	if (was_alive && !allow_alive)
     {
         PrintToServer("[HLstatsX] Refusing team swap: target is alive.");
         if (g_bDominationDebug)
@@ -2510,8 +2755,10 @@ swap_player_internal(player_index, bool:allow_alive)
 
     int team = GetClientTeam(player_index);
 
-    // Detect if player currently holds C4 (slot 4, classname weapon_c4).
-    bool hadC4 = false;
+	// Detect if player currently holds C4 (slot 4, classname weapon_c4).
+	bool hadC4 = false;
+	bool c4_reassigned = false;
+	int cash_before = is_atb ? GetEntProp(player_index, Prop_Send, "m_iAccount") : 0;
     int c4 = GetPlayerWeaponSlot(player_index, 4);
     if (c4 > 0)
     {
@@ -2579,10 +2826,10 @@ swap_player_internal(player_index, bool:allow_alive)
             }
 
             // Even if the player is dead, ensure bomb is reassigned properly.
-            if (hadC4)
-            {
-                GiveC4ToTOrSpawn();
-            }
+			if (hadC4)
+			{
+				c4_reassigned = GiveC4ToTOrSpawn();
+			}
 
             ResetDominationStateForClient(player_index);
             if (g_bDominationDebug)
@@ -2591,6 +2838,68 @@ swap_player_internal(player_index, bool:allow_alive)
             }
         }
     }
+	if (is_atb && g_hAtbAudit != INVALID_HANDLE && GetConVarBool(g_hAtbAudit))
+	{
+		int serial = GetClientSerial(player_index);
+		g_iAtbAuditUserId[player_index] = user_id;
+		g_iAtbAuditCashBefore[player_index] = cash_before;
+		g_bAtbAuditHadC4[player_index] = hadC4;
+		g_bAtbAuditC4Reassigned[player_index] = c4_reassigned;
+		LogToGame("[HLX-ATB-AUDIT] swap userid=%d oldteam=%d newteam=%d alive_before=%d alive_now=%d had_c4=%d c4_reassigned=%d",
+			user_id, old_team, GetClientTeam(player_index), was_alive, IsPlayerAlive(player_index), hadC4, c4_reassigned);
+		CreateTimer(0.3, Timer_HLX_ATBSwapAudit, serial, TIMER_FLAG_NO_MAPCHANGE);
+		CreateTimer(6.0, Timer_HLX_ATBBetAudit, serial, TIMER_FLAG_NO_MAPCHANGE);
+	}
+}
+
+public Action:Timer_HLX_ATBSwapAudit(Handle:timer, any:serial)
+{
+	int client = GetClientFromSerial(serial);
+	if (client <= 0 || !IsClientInGame(client) || g_hAtbAudit == INVALID_HANDLE
+		|| !GetConVarBool(g_hAtbAudit))
+	{
+		return Plugin_Stop;
+	}
+
+	int secondary = GetPlayerWeaponSlot(client, CS_SLOT_SECONDARY);
+	char secondary_class[64] = "none";
+	if (secondary > 0 && IsValidEntity(secondary))
+		GetEdictClassname(secondary, secondary_class, sizeof(secondary_class));
+	int c4_holders = 0;
+	for (int i = 1; i <= MaxClients; i++)
+	{
+		if (!IsClientInGame(i) || GetClientTeam(i) != CS_TEAM_T)
+			continue;
+		int weapon = GetPlayerWeaponSlot(i, 4);
+		if (weapon <= 0 || !IsValidEntity(weapon))
+			continue;
+		char classname[32];
+		GetEdictClassname(weapon, classname, sizeof(classname));
+		if (StrEqual(classname, "weapon_c4", false))
+			c4_holders++;
+	}
+	int armor = GetEntProp(client, Prop_Send, "m_ArmorValue");
+	int cash_after = GetEntProp(client, Prop_Send, "m_iAccount");
+	LogToGame("[HLX-ATB-AUDIT] postspawn userid=%d team=%d alive=%d secondary=%s armor=%d c4_holders=%d had_c4=%d c4_reassigned=%d cash_before=%d cash_after=%d",
+		g_iAtbAuditUserId[client], GetClientTeam(client), IsPlayerAlive(client), secondary_class, armor,
+		c4_holders, g_bAtbAuditHadC4[client], g_bAtbAuditC4Reassigned[client],
+		g_iAtbAuditCashBefore[client], cash_after);
+	return Plugin_Stop;
+}
+
+public Action:Timer_HLX_ATBBetAudit(Handle:timer, any:serial)
+{
+	int client = GetClientFromSerial(serial);
+	if (client <= 0 || !IsClientInGame(client) || g_hAtbAudit == INVALID_HANDLE
+		|| !GetConVarBool(g_hAtbAudit))
+	{
+		return Plugin_Stop;
+	}
+	int cash_after = GetEntProp(client, Prop_Send, "m_iAccount");
+	LogToGame("[HLX-ATB-AUDIT] later userid=%d team=%d alive=%d round_active=%d cash_before=%d cash_after=%d",
+		g_iAtbAuditUserId[client], GetClientTeam(client), IsPlayerAlive(client), g_bRoundActive,
+		g_iAtbAuditCashBefore[client], cash_after);
+	return Plugin_Stop;
 }
 
 public CreateHLstatsXMenuMain(&Handle: MenuHandle)
@@ -2728,7 +3037,6 @@ public HLstatsXMainCommandHandler(Handle:menu, MenuAction:action, param1, param2
 		}
 	}
 }
-
 
 public HLstatsXAutoCommandHandler(Handle:menu, MenuAction:action, param1, param2)
 {

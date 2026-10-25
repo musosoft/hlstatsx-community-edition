@@ -344,7 +344,7 @@ For support and installation notes visit http://www.hlxcommunity.com
 ?>  
         <tr class="data-table-row">
 			<td style="text-align:center;">
-				<div id="map" style="margin:10px auto;width: 870px; height: 380px; color:black;"></div>
+				<?php include(INCLUDE_PATH . '/openstreetmap.php'); hlxPrintOsmMap(); ?>
 			</td>
         </tr>  
 <?php

@@ -74,6 +74,10 @@ class DB_mysql
 
 	function __construct($db_addr, $db_user, $db_pass, $db_name, $use_pconnect = false)
 	{
+		// This wrapper's contract is false + explicit error handling on failed
+		// queries. PHP 8.1+ otherwise throws mysqli_sql_exception by default.
+		mysqli_report(MYSQLI_REPORT_OFF);
+
 		$this->db_addr = $db_addr;
 		$this->db_user = $db_user;
 		$this->db_pass = $db_pass;
@@ -297,15 +301,14 @@ class DB_mysql
 
 	function error($message, $exit=true)
 	{
-		error(
-			"<b>Database Error</b><br />\n<br />\n" .
-			"<i>Server Address:</i> $this->db_addr<br />\n" .
-			"<i>Server Username:</i> $this->db_user<br /><br />\n" .
-			"<i>Error Diagnostic:</i><br />\n$message<br /><br />\n" .
-			"<i>Server Error:</i> (" . @mysqli_errno($this->link) . ") " . @mysqli_error($this->link) . "<br /><br />\n" .
-			"<i>Last SQL Query:</i><br />\n<pre style=\"font-size:2px;\">$this->last_query</pre>",
-			$exit
+		$diagnostic = sprintf(
+			'Database error (%d): %s; query fingerprint: %s',
+			(int)@mysqli_errno($this->link),
+			(string)@mysqli_error($this->link),
+			hash('sha256', (string)$this->last_query)
 		);
+		error_log('HLstatsX: ' . $diagnostic);
+		error('A database error occurred. Please contact the site administrator.', $exit);
 	}
 }
 ?>

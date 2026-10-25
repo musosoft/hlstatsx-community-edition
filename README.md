@@ -1,7 +1,7 @@
-# HLstatsX : Community Edition
+# HLstatsX: Curated Edition
 
 ```
-HLstatsX Community Edition is an open-source project licensed
+HLstatsX: Curated Edition (HLstatsX:CE) is an open-source project licensed
 under GNU General Public License v2 and is a real-time stats
 and ranking system for Source engine-based games. HLstatsX Community
 Edition uses a Perl daemon to parse the log streamed from the
@@ -11,11 +11,14 @@ a PHP frontend.
 
 Counter-Strike 2 is supported (mostly), via [`source-udp-forwarder`](https://github.com/startersclan/source-udp-forwarder).
 
-This repository is a fork of [startersclan/hlstatsx-community-edition](https://github.com/startersclan/hlstatsx-community-edition) with additional updates from various community and private patches to improve performance, security, and appearance. Enhancements include:
+This repository continues [startersclan/hlstatsx-community-edition](https://github.com/startersclan/hlstatsx-community-edition), selectively adapting compatible fixes from the wider HLstatsX community while retaining the Perl daemon, PHP frontend, Auto Team Balance, plugins, and local improvements. Public prerelease identity: **HLstatsX: Curated Edition 1.13.0-CE**; database schema **96** is numbered independently. See the [upstream integration review](./docs/curated-edition-upstream-review.md) for source decisions and compatibility notes.
+
+Enhancements include:
 - **Fixed Message of the Day**
 - **Fixed Auto Team Balance**
 - **Fixed Problems in code**
 - **Fixed Appearance and UI issues**
+- **Opt-in responsive light and dark themes**
 
 Currently, this fork is being tested on **[stats.lamateam.eu](http://stats.lamateam.eu)** with a Counter-Strike: Source server. Other games need more testing. Please [Report Issues](https://github.com/musosoft/hlstatsx-community-edition/issues).
 
@@ -30,6 +33,7 @@ Thank you for cooperating, submitting issues, pull requests or any other help. I
 | 07.10.2024  | **Fixed Auto Team Balance**        | Missing TS calc, ATB logic not compatible with CS:S
 | 07.10.2024  | **Fixed Problems in code**         | Typo with bracket, security
 | 07.10.2024  | **Improved In-game ATB**           | Add Admin Swap command and fade effect
+| 25.10.2026  | **HLstatsX: Curated Edition 1.13.0-CE / DB 96** | Selected community security, compatibility, CS2 heatmap, opt-in themes, and configurable hit counters; see the integration review
 
 > Date format: DD.MM.YYYY
 
@@ -50,14 +54,16 @@ Thank you for cooperating, submitting issues, pull requests or any other help. I
 `web` image (See [./src/web/config.php](./src/web/config.php) for supported environment variables):
 
 ```sh
-docker run --rm -it -e DB_ADDR=db -e DB_NAME=hlstatsxce -e DB_USER=hlstatsxce -e DB_PASS=hlstatsxce -p 80:80 startersclan/hlstatsx-community-edition:1.11.4-web
+docker build -f Dockerfile.web -t hlstatsx-curated-edition:1.13.0-ce-web .
+docker build -f Dockerfile.daemon -t hlstatsx-curated-edition:1.13.0-ce-daemon .
+docker run --rm -it -e DB_ADDR=db -e DB_NAME=hlstatsxce -e DB_USER=hlstatsxce -e DB_PASS=hlstatsxce -p 80:80 hlstatsx-curated-edition:1.13.0-ce-web
 ```
 
 `daemon` image:
 
 ```sh
 # Use --help for usage
-docker run --rm -it -p 27500:27500/udp startersclan/hlstatsx-community-edition:1.11.4-daemon --db-host=db:3306 --db-name=hlstatsxce --db-username=hlstatsxce --db-password=hlstatsxce #--help
+docker run --rm -it -p 27500:27500/udp hlstatsx-curated-edition:1.13.0-ce-daemon --db-host=db:3306 --db-name=hlstatsxce --db-username=hlstatsxce --db-password=hlstatsxce #--help
 ```
 
 ### Docker Compose
@@ -73,6 +79,8 @@ docker-compose -f docker-compose.example.yml up
 echo '127.0.0.1 web.example.com' | sudo tee -a /etc/hosts
 echo '127.0.0.1 phpmyadmin.example.com' | sudo tee -a /etc/hosts
 ```
+
+The default `cstrike` service is Counter-Strike 1.6. To run an additional **Counter-Strike: Source** smoke-test server, set `CSS_RCON_PASSWORD` to a private value and start the optional profile with `docker compose --profile css-test up -d css`. It exposes port 27016 and forwards game logs to the included daemon. The server image does not include the curated SourceMod plugin, so this is not an ATB integration test.
 
 - [install.sql](./src/sql/install.sql) is mounted in `mysql` container which automatically installs the DB only on the first time. If you prefer not to mount `install.sql`, you may manually install the DB by logging into PHPMyAdmin and importing the `install.sql` there.
 - `traefik` serves HTTPS with a self-signed cert. All HTTP requests are redirected to HTTPS.

@@ -1,0 +1,145 @@
+/* Curated Edition: opt-in light theme, loaded after hlstats.css.
+ * Keep structural rules in sync with curated_dark.css; no classic imports.
+ * Preserve inline column alignment, chart colours and JS-controlled visibility. */
+:root {
+	color-scheme: light;
+	--ce-page: #f2f5f9;
+	--ce-surface: #ffffff;
+	--ce-surface-alt: #eaf0f7;
+	--ce-hover: #dce9f8;
+	--ce-border: #c4cfdd;
+	--ce-control-border: #738399;
+	--ce-text: #19283b;
+	--ce-muted: #4c6078;
+	--ce-link: #1556a0;
+	--ce-link-hover: #093b75;
+	--ce-accent: #184f8c;
+	--ce-accent-contrast: #ffffff;
+	--ce-focus: #a33b00;
+	--ce-danger: #a61d32;
+	--ce-danger-bg: #fff1f3;
+}
+
+body { margin: 1rem; background: var(--ce-page); color: var(--ce-text); font: .875rem/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+td, th, input, textarea, select, button { font: inherit; }
+h1, h2, h3, .fTitle, .fHeading { font-family: inherit; font-weight: 650; line-height: 1.35; }
+h1, .fTitle { font-size: 1.35rem; }
+h2 { font-size: 1.15rem; }
+h3, .fHeading { font-size: 1rem; }
+.fSmall { font-size: .8125rem; }
+tt, code, pre { font-family: ui-monospace, "Cascadia Code", monospace; font-size: .9em; }
+pre { overflow-x: auto; }
+a:link, a:visited { color: var(--ce-link); text-decoration: underline; text-underline-offset: .16em; }
+a:hover, a:active { color: var(--ce-link-hover); }
+:focus-visible { outline: 3px solid var(--ce-focus); outline-offset: 2px; }
+::selection { background: var(--ce-accent); color: var(--ce-accent-contrast); }
+img { border: 0; vertical-align: middle; }
+.imageformat { text-align: center; }
+.block { margin: 0 auto; }
+.subblock { width: 95%; margin: 0 auto; }
+
+/* Let the logo, game list and image tabs wrap rather than overlap. */
+.headerblock { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .75rem 1rem; padding: .5rem 0 1rem; }
+.headerblock .title { min-width: 0; }
+.headerblock .title img { max-width: 100%; height: auto; }
+.hlx-osm-map { box-sizing: border-box; width: 100%; max-width: 870px; height: 380px; margin: 10px auto; border: 1px solid var(--ce-border); border-radius: .35rem; color: #19283b; background: #e8edf3; }
+body#ingame .headerblock { box-sizing: border-box; height: auto !important; min-height: 50px; padding: .25rem .5rem; }
+.header_gameslist { position: static; float: none; margin: 0; }
+ul#header_gameslist { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .5rem; padding: 0; }
+ul#header_gameslist li { float: none; padding: 0; }
+#gameslist-active-game { outline: 2px solid var(--ce-link); outline-offset: 2px; border-radius: .2rem; }
+.headertabs ul { display: flex; flex-wrap: wrap; gap: .35rem; list-style: none; margin: 0; padding: 0; }
+.headertab { vertical-align: bottom; }
+.location { display: flow-root; box-sizing: border-box; padding: .55rem .75rem; border: 1px solid var(--ce-border); border-radius: .5rem; background: var(--ce-surface); }
+.location ul { list-style: none; padding: .25rem 0; margin: 0; color: var(--ce-text); }
+.location li { display: inline; margin-right: .35rem; }
+.location .arrow { color: var(--ce-muted); }
+.location form { margin: 0; }
+.location_under { height: .25rem; }
+.navbar { display: flex; flex-wrap: wrap; justify-content: center; gap: .5rem 1rem; list-style: none; margin: 0; padding: 0 0 1rem; }
+.navbar li { margin: 0; }
+.navbar img { margin: 0 .25rem; }
+
+/* Remove the legacy glossy gradient and its focus-clipping overlay. */
+ul.fancyNav { display: inline-flex; flex-wrap: wrap; justify-content: center; gap: .35rem; overflow: visible; margin: 0 0 1.25rem; padding: 0; border-radius: 0; }
+.fancyNav li, .fancyNav li:first-child, .fancyNav li:last-child { float: none; margin: 0; border: 1px solid var(--ce-border); border-radius: .4rem; background: var(--ce-surface); box-shadow: none; }
+.fancyNav li::after { display: none; }
+.fancyNav li a { display: block; padding: .6rem 1rem; color: var(--ce-text); font: inherit; font-weight: 600; text-shadow: none; }
+.fancyNav li:hover, .fancyNav li:focus-within { background: var(--ce-hover); }
+.fancyNav li.selected { background: var(--ce-accent); border-color: var(--ce-accent); }
+.fancyNav li.selected a { color: var(--ce-accent-contrast); }
+#main ul.subsection_tabs { display: flex; flex-wrap: wrap; gap: .35rem; list-style: none; margin: 0 0 1rem; padding: .25rem 0 .65rem; border-bottom: 1px solid var(--ce-border); }
+#main ul.subsection_tabs li { margin: 0; }
+#main ul.subsection_tabs li a { display: block; padding: .5rem .85rem; border: 1px solid var(--ce-border); border-radius: .35rem; background: var(--ce-surface); font-weight: 600; }
+#main ul.subsection_tabs li a:hover { background: var(--ce-hover); }
+#main ul.subsection_tabs li a.active { background: var(--ce-accent); color: var(--ce-accent-contrast); border-color: var(--ce-accent); }
+
+/* bg1/bg2 alternate COLUMNS in generated rankings, not necessarily rows. */
+.data-table, .livestats-table { width: 100%; border-collapse: collapse; background: var(--ce-surface); border-color: var(--ce-border); }
+.data-table td, .data-table th, .game-table-cell { border: 1px solid var(--ce-border); padding: .5rem .65rem; vertical-align: middle; }
+.data-table td, .data-table th { font-variant-numeric: tabular-nums; }
+.bg1 { background: var(--ce-surface); }
+.bg2 { background: var(--ce-surface-alt); }
+.game-table-row { background: var(--ce-surface); }
+.game-table-row-hover { background: var(--ce-hover); }
+.game-table-cell { color: var(--ce-text); }
+.data-table tr:not(.data-table-head):hover > .bg1, .data-table tr:not(.data-table-head):hover > .bg2 { background: var(--ce-hover); }
+.data-table-head, .data-table-head > td, .data-table-head > th { background: var(--ce-accent); color: var(--ce-accent-contrast); font-weight: 600; }
+.data-table-head a:link, .data-table-head a:visited { color: var(--ce-accent-contrast); }
+.data-table-head a:hover { text-decoration-thickness: 2px; }
+.data-table-head :focus-visible { outline-color: var(--ce-accent-contrast); outline-offset: 0; }
+.livestats-table td { padding: .2rem .35rem; border: 0; text-align: center; }
+.tableicon { margin: 0 .25rem; }
+.bargraph { height: 10px; }
+/* Raster graphs and map/heatmap coordinates must not be resized or filtered. */
+meter { accent-color: var(--ce-accent); }
+.gmapstab { color: #19283b; background: #fff; }
+.gmapstab td { border: 0; padding: 0; }
+.gmapstab a { color: #1556a0; }
+.gmapstabtitle { color: #19283b; font-weight: 700; text-align: left; }
+
+input, textarea, select, button { box-sizing: border-box; max-width: 100%; color: var(--ce-text); background-color: var(--ce-surface); border: 1px solid var(--ce-control-border); border-radius: .3rem; padding: .4rem .55rem; }
+input::placeholder, textarea::placeholder { color: var(--ce-muted); opacity: 1; }
+input[type="checkbox"], input[type="radio"] { padding: 0; accent-color: var(--ce-accent); vertical-align: middle; }
+button, input[type="submit"], input[type="button"], input[type="reset"] { min-height: 2.25rem; padding: .4rem .8rem; background: var(--ce-accent); color: var(--ce-accent-contrast); border-color: var(--ce-accent); font-weight: 600; cursor: pointer; }
+input.submit, input.smallsubmit, button.smallsubmit { height: auto; font-size: inherit; }
+button:hover, input[type="submit"]:hover, input[type="button"]:hover, input[type="reset"]:hover { text-decoration: underline; text-underline-offset: .15em; }
+input:disabled, textarea:disabled, select:disabled, button:disabled { cursor: not-allowed; opacity: .65; }
+input[readonly], textarea[readonly] { background-color: var(--ce-surface-alt); }
+fieldset { min-width: 0; border: 1px solid var(--ce-border); border-radius: .4rem; }
+legend { font-weight: 600; padding: 0 .35rem; }
+/* Autocompleter.css loads later; added specificity keeps the palette intact. */
+body ul.autocompleter-choices { background: var(--ce-surface); color: var(--ce-text); border-color: var(--ce-control-border); font-family: inherit; border-radius: .3rem; }
+body ul.autocompleter-choices li { margin: 0; padding: .45rem .75rem; color: var(--ce-text); }
+body ul.autocompleter-choices li.autocompleter-selected { background: var(--ce-accent); color: var(--ce-accent-contrast); }
+body ul.autocompleter-choices li.autocompleter-selected span.autocompleter-queried { color: inherit; text-decoration: underline; }
+.errorhead { padding: .65rem; background: var(--ce-danger); color: #fff; font-weight: 700; }
+.errortext, .warning { background: var(--ce-danger-bg); color: var(--ce-text); padding: 1rem; border: 1px solid var(--ce-danger); }
+.warning .warning-heading { font-size: 1.2rem; font-weight: 700; }
+.helpwindow { background: var(--ce-surface); color: var(--ce-text); border-color: var(--ce-control-border); }
+#footer { margin-top: 1.5rem; padding: 1rem 0; border-top: 1px solid var(--ce-border); color: var(--ce-muted); text-align: center; }
+
+@media (max-width: 700px) {
+	body { margin: .5rem; }
+	.subblock { width: 100%; }
+	.hlx-osm-map { height: min(65vh, 380px); min-height: 280px; }
+	body#ingame .headerblock { align-items: center; }
+	ul#header_gameslist { justify-content: flex-start; }
+	.location { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1rem; }
+	.location > ul, .location > div { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+	.location select { max-width: 100%; }
+	.fancyNav li a { padding: .65rem .8rem; }
+	/* Scroll only data tables; do not turn layout tables into cards or hide columns.
+	 * Retain native page scrolling for fixed-width graphs and other legacy tables. */
+	table.data-table { display: block; max-width: 100%; overflow-x: auto; }
+	.data-table td, .data-table th, .game-table-cell { padding: .45rem .5rem; }
+	input, textarea, select { font-size: 1rem; }
+}
+
+@media print {
+	:root { color-scheme: light; --ce-text: #000; --ce-muted: #333; --ce-surface: #fff; --ce-surface-alt: #fff; --ce-hover: #fff; --ce-border: #999; }
+	body { margin: 0; background: #fff; color: #000; }
+	.data-table, .bg1, .bg2, .game-table-row, .data-table-head, .data-table-head > td, .data-table-head > th { background: #fff; color: #000; }
+	a:link, a:visited, .data-table-head a:link, .data-table-head a:visited { color: #000; }
+	table.data-table { display: table; overflow: visible; }
+}

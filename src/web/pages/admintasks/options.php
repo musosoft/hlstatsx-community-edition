@@ -227,9 +227,9 @@ RewriteRule sig-(.*)-(.*).png$ sig.php?player_id=$1&background=$2 [L]</textarea>
 	
 	$optiongroups[1] = new OptionGroup('GeoIP data & Google Map settings');
 	$optiongroups[1]->options[] = new Option('countrydata', 'Show features requiring GeoIP data', 'select');
-	$optiongroups[1]->options[] = new Option('show_google_map', 'Show Google worldmap', 'select');
-	$optiongroups[1]->options[] = new Option('google_map_region', 'Google Maps Region', 'select');
-	$optiongroups[1]->options[] = new Option('google_map_type', 'Google Maps Type', 'select');
+	$optiongroups[1]->options[] = new Option('show_google_map', 'Show server/player location map (OpenStreetMap)', 'select');
+	$optiongroups[1]->options[] = new Option('google_map_region', 'Location map center region', 'select');
+	$optiongroups[1]->options[] = new Option('google_map_type', 'Legacy Google Maps type setting (unused by OpenStreetMap)', 'select');
 	$optiongroups[1]->options[] = new Option('UseGeoIPBinary', '*Choose whether to use GeoCityLite data loaded into mysql database or from binary file. (If binary, GeoLiteCity.dat goes in perl/GeoLiteCity and Geo::IP::PurePerl module is required', 'select');
 
 	$optiongroups[2] = new OptionGroup('Awards settings');
@@ -240,6 +240,7 @@ RewriteRule sig-(.*)-(.*).png$ sig.php?player_id=$1&background=$2 [L]</textarea>
 	$optiongroups[2]->options[] = new Option('awardribbonscols', 'Ribbons: columns count', 'text');
 
 	$optiongroups[3] = new OptionGroup('Hit counter settings');
+	$optiongroups[3]->options[] = new Option('counter_enabled', 'Count page hits and visits (disable to reduce per-request database writes)', 'select');
 	$optiongroups[3]->options[] = new Option('counter_visit_timeout', 'Visit cookie timeout in minutes', 'text');
 	$optiongroups[3]->options[] = new Option('counter_visits', 'Current Visits', 'text');
 	$optiongroups[3]->options[] = new Option('counter_hits', 'Current Page Hits', 'text');
@@ -314,4 +315,3 @@ RewriteRule sig-(.*)-(.*).png$ sig.php?player_id=$1&background=$2 [L]</textarea>
 		<td style="text-align:center;" colspan="2"><input type="submit" value="  Apply  " class="submit" /></td>
 	</tr>
 </table>
-

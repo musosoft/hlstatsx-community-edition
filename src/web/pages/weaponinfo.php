@@ -42,15 +42,17 @@ For support and installation notes visit http://www.hlxcommunity.com
 	// Weapon Details
 	
 	$weapon = valid_request($_GET['weapon'], false) or error('No weapon ID specified.');
-	
+	$weaponSql = $db->escape($weapon);
+	$gameSql = $db->escape($game);
+
 	$db->query("
 		SELECT
 			name
 		FROM
 			hlstats_Weapons
 		WHERE
-			code='$weapon'
-			AND game='$game'
+			code='$weaponSql'
+			AND game='$gameSql'
 	");
 	
 	if ($db->num_rows() != 1)
@@ -64,7 +66,7 @@ For support and installation notes visit http://www.hlxcommunity.com
 		$wep_name = $weapondata['name'];
 	}
 	
-	$db->query("SELECT name FROM hlstats_Games WHERE code='$game'");
+	$db->query("SELECT name FROM hlstats_Games WHERE code='$gameSql'");
 	if ($db->num_rows() != 1)
 	{
 		error('Invalid or no game specified.');
@@ -128,7 +130,7 @@ For support and installation notes visit http://www.hlxcommunity.com
 		WHERE
 			hlstats_Players.playerId = hlstats_Events_Frags.killerId
 			AND hlstats_Events_Frags.weapon='$weapon'
-			AND hlstats_Players.game='$game'
+			AND hlstats_Players.game='$gameSql'
 			AND hlstats_Players.hideranking = 0
 		GROUP BY
 			hlstats_Events_Frags.killerId
@@ -149,7 +151,7 @@ For support and installation notes visit http://www.hlxcommunity.com
 		WHERE
 			hlstats_Servers.serverId = hlstats_Events_Frags.serverId
 			AND hlstats_Events_Frags.weapon='$weapon'
-			AND hlstats_Servers.game='$game'
+			AND hlstats_Servers.game='$gameSql'
 	");
 	
 	list($numitems, $totalkills, $totalheadshots) = $db->fetch_row($resultCount);

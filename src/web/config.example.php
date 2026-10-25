@@ -105,6 +105,7 @@ defineVar("IMAGE_PATH", './hlstatsimg');
 // How often dynamicly generated images are updated (in seconds)
 defineVar("IMAGE_UPDATE_INTERVAL", 300);
 
+// Retained for third-party legacy integrations; curated location maps use OSM tiles and need no Google API key.
 defineVar('GOOGLE_MAPS_API_KEY', "");
 
 defineVar("DB_DEBUG", false);

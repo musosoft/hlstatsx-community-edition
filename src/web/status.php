@@ -112,7 +112,7 @@ $g_options['scriptbase'] = str_replace('/status.php', '', $g_options['scripturl'
 
 $game = 'css';  
 if (isset($_GET['game']) && is_string($_GET['game'])) {
-	$game = valid_request($_GET['game'], false);
+	$game = valid_game_code($_GET['game']) ?: 'css';
 }
 
 $game_escaped = $db->escape($game);

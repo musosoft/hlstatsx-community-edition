@@ -100,7 +100,7 @@ For support and installation notes visit http://www.hlxcommunity.com
 
 	$game = "unset";
 	if (isset($_GET['game'])) {
-		$game = valid_request($_GET['game'], false);
+		$game = valid_game_code($_GET['game']);
 	}
 
 	$game_escaped = $db->escape($game);

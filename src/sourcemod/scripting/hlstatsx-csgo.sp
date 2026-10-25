@@ -28,7 +28,7 @@
 #include <cstrike>
 #include <clientprefs>
 
-#define VERSION "1.11.4"
+#define VERSION "1.13.0-CE"
 #define HLXTAG "HLstatsX:CE"
 
 new Handle: hlx_block_chat_commands;
@@ -65,9 +65,9 @@ new EngineVersion:CurrentVersion;
 #define SVTAGSIZE 128
 
 public Plugin:myinfo = {
-	name = "[CSGO] HLstatsX plugin",
+	name = "[CS:GO] HLstatsX: Curated Edition",
 	author = "psychonic",
-	description = "Provides ingame functionality for interaction from an HLstatsX CE installation",
+	description = "Provides in-game functionality for HLstatsX: Curated Edition",
 	version = VERSION,
 	url = "http://www.hlxcommunity.com"
 };
@@ -110,7 +110,7 @@ public OnPluginStart()
 	g_bTrackColors4Chat = true;
 	HookEvent("player_team",  HLstatsX_Event_PlyTeamChange, EventHookMode_Pre);
 	
-	CreateConVar("hlxce_plugin_version", VERSION, "HLstatsX:CE Ingame Plugin", FCVAR_NOTIFY);
+	CreateConVar("hlxce_plugin_version", VERSION, "HLstatsX: Curated Edition Ingame Plugin", FCVAR_NOTIFY);
 	CreateConVar("hlxce_version", "", "HLstatsX:CE", FCVAR_NOTIFY);
 	CreateConVar("hlxce_webpage", "http://www.hlxcommunity.com", "http://www.hlxcommunity.com", FCVAR_NOTIFY);
 	

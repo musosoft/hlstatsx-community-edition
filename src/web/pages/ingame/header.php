@@ -48,14 +48,16 @@ For support and installation notes visit http://www.hlxcommunity.com
 	 */
 Header ('Cache-Control: no-cache');
 $lastpage = isset($_SERVER['HTTP_REFERER'])?$_SERVER['HTTP_REFERER']:"";
+$selectedStyle = hlxResolveStylesheet($_COOKIE['style'] ?? '', $g_options['style'] ?? 'classic.css');
 ?>
 <!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">
 
 <html>
 <head>
 	<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+	<?php if (in_array($selectedStyle, array('curated_light.css', 'curated_dark.css'), true)) { ?><meta name="viewport" content="width=device-width, initial-scale=1"><?php } ?>
 	<link rel="stylesheet" type="text/css" href="hlstats.css">
-	<link rel="stylesheet" type="text/css" href="styles/<?php echo $g_options['style']; ?>">
+	<link rel="stylesheet" type="text/css" href="styles/<?php echo htmlspecialchars($selectedStyle, ENT_QUOTES, 'UTF-8'); ?>">
 	<title>HLstatsX</title>
 </head>
 <body style="margin:0px;padding:0px;" id="ingame"> 

@@ -62,13 +62,13 @@ if($historical_cache==1)
 	}
 }
 
+ini_set('session.use_strict_mode', '1');
+session_set_cookie_params([
+	'httponly' => true,
+	'samesite' => 'Lax',
+	'secure' => !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off',
+]);
 session_start();
-
-if (!empty($_GET['logout']) && $_GET['logout'] == '1') {
-	unset($_SESSION['loggedin']);
-	header("Location: http://".$_SERVER['HTTP_HOST'].$_SERVER['SCRIPT_NAME']);
-	die;
-}
 
 // Several stuff added by Malte Bayer
 global $scripttime, $siteurlneo;
@@ -124,6 +124,19 @@ require(INCLUDE_PATH . '/class_db.php');
 require(INCLUDE_PATH . '/class_table.php');
 require(INCLUDE_PATH . '/functions.php');
 
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && ($_POST['logout'] ?? '') === '1') {
+	if (hlxCheckCsrf()) {
+		$_SESSION = array();
+		if (ini_get('session.use_cookies')) {
+			$params = session_get_cookie_params();
+			setcookie(session_name(), '', time() - 42000, $params['path'], $params['domain'], $params['secure'], $params['httponly']);
+		}
+		session_destroy();
+	}
+	header('Location: ' . basename($_SERVER['SCRIPT_NAME']));
+	exit;
+}
+
 $db_classname = 'DB_' . DB_TYPE;
 if ( class_exists($db_classname) )
 {
@@ -144,13 +157,13 @@ if (!isset($g_options['scripturl'])) {
 //// Main
 ////
 
-$game = valid_request(isset($_GET['game']) ? $_GET['game'] : '', false);
+$game = valid_game_code($_GET['game'] ?? '');
 
 $realgame = $_SESSION['realgame'] ?? null;
 
 if (!$game)
 {
-	$game = isset($_SESSION['game'])?$_SESSION['game']:'';
+	$game = valid_game_code($_SESSION['game'] ?? '');
 }
 else
 {
@@ -200,7 +213,8 @@ $valid_modes = array(
 	'teamspeak',
 	'ventrilo',
 	'updater',
-	'profile'
+	'profile',
+	'sitemap'
 );
    
 // In docker, the updater folder will always be present, to allow

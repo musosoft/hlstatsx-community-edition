@@ -2,8 +2,8 @@
 
 -- This file is only needed for new installations.
 
-SET @DBVERSION="95";
-SET @VERSION="1.11.6";
+SET @DBVERSION="96";
+SET @VERSION="1.13.0-CE";
 
 -- --------------------------------------------------------
 
@@ -26,8 +26,8 @@ CREATE TABLE IF NOT EXISTS `geoLiteCity_Blocks` (
 CREATE TABLE IF NOT EXISTS `geoLiteCity_Location` (
   `locId` bigint(11) unsigned NOT NULL default '0',
   `country` varchar(2) NOT NULL,
-  `region` varchar(50) default NULL,
-  `city` varchar(50) default NULL,
+  `region` varchar(128) default NULL,
+  `city` varchar(128) default NULL,
   `postalCode` varchar(10) default NULL,
   `latitude` decimal(14,4) default NULL,
   `longitude` decimal(14,4) default NULL,
@@ -2262,7 +2262,7 @@ CREATE TABLE IF NOT EXISTS `hlstats_Events_Chat` (
   `message_mode` tinyint(2) NOT NULL default '0',
   `message` varchar(128) NOT NULL default '',
   PRIMARY KEY  (`id`),
-  KEY `playerId` (`playerId`),
+  KEY `playerId_eventTime` (`playerId`,`eventTime`),
   KEY `serverId` (`serverId`),
   FULLTEXT KEY `message` (`message`)
 ) ENGINE=MyISAM  DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -3867,6 +3867,24 @@ INSERT INTO `hlstats_Heatmap_Config` (`map`, `game`, `xoffset`, `yoffset`, `flip
 ('c5m4_quarter', 'l4d', 7494, 5735, 0, 1, 30, 'small', 10, 10, 0.170312, 0.170312, 0, 0, 0, 0),
 ('c5m5_bridge', 'l4d', 14466, 16658, 0, 1, 30, 'small', 22, 10, 0.170312, 0.170312, 0, 0, 0, 0);
 
+-- CS2 stock-map heatmap defaults, adapted from Lovasatt DB99. INSERT IGNORE
+-- preserves any map calibration supplied by an installer.
+INSERT IGNORE INTO `hlstats_Heatmap_Config` (`map`, `game`, `xoffset`, `yoffset`, `flipx`, `flipy`, `rotate`, `days`, `brush`, `scale`, `font`, `thumbw`, `thumbh`, `cropx1`, `cropy1`, `cropx2`, `cropy2`) VALUES
+('ar_baggage', 'cs2', 1316, 1288, 0, 1, 1, 30, 'small', 2.539062, 10, 0.170312, 0.170312, 0, 0, 0, 0),
+('ar_shoots', 'cs2', 1368, 1952, 0, 1, 0, 30, 'small', 2.687500, 10, 0.170312, 0.170312, 0, 0, 0, 0),
+('cs_italy', 'cs2', 2647, 2592, 0, 1, 0, 30, 'small', 4.600000, 10, 0.170312, 0.170312, 0, 0, 0, 0),
+('cs_office', 'cs2', 1838, 1858, 0, 1, 0, 30, 'small', 4.100000, 10, 0.170312, 0.170312, 0, 0, 0, 0),
+('de_ancient', 'cs2', 2953, 2164, 0, 1, 0, 30, 'small', 5.000000, 10, 0.170312, 0.170312, 0, 0, 0, 0),
+('de_anubis', 'cs2', 2796, 3328, 0, 1, 0, 30, 'small', 5.220000, 10, 0.170312, 0.170312, 0, 0, 0, 0),
+('de_dust2', 'cs2', 2476, 3239, 0, 1, 0, 30, 'small', 4.400000, 10, 0.170312, 0.170312, 0, 0, 0, 0),
+('de_inferno', 'cs2', 2087, 3870, 0, 1, 0, 30, 'small', 4.900000, 10, 0.170312, 0.170312, 0, 0, 0, 0),
+('de_mirage', 'cs2', 3230, 1713, 0, 1, 0, 30, 'small', 5.000000, 10, 0.170312, 0.170312, 0, 0, 0, 0),
+('de_nuke', 'cs2', 3453, 2887, 0, 1, 0, 30, 'small', 7.000000, 10, 0.170312, 0.170312, 0, 0, 0, 0),
+('de_overpass', 'cs2', 4831, 1781, 0, 1, 0, 30, 'small', 5.200000, 10, 0.170312, 0.170312, 0, 0, 0, 0),
+('de_train', 'cs2', 2308, 2078, 0, 1, 0, 30, 'small', 4.082077, 10, 0.170312, 0.170312, 0, 0, 0, 0),
+('de_vertigo', 'cs2', 3168, 1762, 0, 1, 0, 30, 'small', 4.000000, 10, 0.170312, 0.170312, 0, 0, 0, 0),
+('rush_001', 'cs2', 11240, 9944, 0, 1, 0, 30, 'small', 18.910156, 10, 0.170312, 0.170312, 0, 0, 0, 0);
+
 --
 -- Table structure for table `hlstats_HostGroups`
 --
@@ -4054,7 +4072,7 @@ INSERT INTO `hlstats_Options` (`keyname`, `value`, `opttype`) VALUES
 ('SkillRatioCap', '0',0),
 ('UseGeoIPBinary', '1',0),
 ('contact', 'your@email.address',2),
-('sitename', 'HLstatsX Community Edition',2),
+('sitename', 'HLstatsX: Curated Edition',2),
 ('siteurl', 'http://www.yoursite.com/stats/',2),
 ('style', 'sourcebans.css',2),
 ('imgpath', 'hlstatsimg',2),
@@ -4074,6 +4092,7 @@ INSERT INTO `hlstats_Options` (`keyname`, `value`, `opttype`) VALUES
 ('awardribbonscols', '5',2),
 ('sigbackground', 'random',2),
 ('playerinfo_tabs', '1',2),
+('counter_enabled', '1',2),
 ('counter_hits', '0',2),
 ('counter_visits', '0',2),
 ('counter_visit_timeout', '5',2),
@@ -4200,6 +4219,8 @@ INSERT INTO `hlstats_Options_Choices` (`keyname`, `value`, `text`, `isDefault`) 
 ('SkillRatioCap', '1', 'Yes', 0),
 ('UseGeoIPBinary', '0', 'GeoIP lookup via database', 1),
 ('UseGeoIPBinary', '1', 'GeoIP lookup via binary file', 0),
+('counter_enabled', '1', 'Yes', 1),
+('counter_enabled', '0', 'No', 0),
 ('showqueries', '0', 'No', 1),
 ('showqueries', '1', 'Yes', 0),
 ('display_gamelist', '1', 'Yes', 1),
@@ -6886,7 +6907,8 @@ INSERT INTO `hlstats_Servers_Config_Default` (`parameter`, `value`, `description
 ('BalanceRoundsDelay', '3', 'Rounds before next AutoBalance by skill. Default is 3.'),
 ('BalanceAnalyzeRounds', '7', 'How many last rounds are analyzed for balancing. Default is 7.'),
 ('BalanceMaxWins', '1', 'Defines maximum wins trough BalanceAnalyzeRounds for team to balance. More wins = more aggressive balance. Default 1.'),
-('BalanceIgnoreBots', '0', 'If enabled, bots are ignored by AutoBalance. 1=on 0=off(default).');
+('BalanceIgnoreBots', '0', 'If enabled, bots are ignored by AutoBalance. 1=on 0=off(default).'),
+('LogSecret', '', 'Source engine only: match this to sv_logsecret on the game server to reject unsigned log packets. Empty disables validation. Reload the daemon after changing it.');
 -- --------------------------------------------------------
 
 --
@@ -7045,7 +7067,7 @@ CREATE TABLE IF NOT EXISTS `hlstats_Trend` (
 
 CREATE TABLE IF NOT EXISTS `hlstats_Users` (
   `username` varchar(16) NOT NULL default '',
-  `password` varchar(32) NOT NULL default '',
+  `password` varchar(255) NOT NULL default '',
   `acclevel` int(11) NOT NULL default '0',
   `playerId` int(11) NOT NULL default '0',
   PRIMARY KEY  (`username`)

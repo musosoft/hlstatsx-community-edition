@@ -46,7 +46,7 @@ For support and installation notes visit http://www.hlxcommunity.com
 	}
 
 ?>
-	<strong>&nbsp;<a href="http://www.hlxcommunity.com">HLstatsX Community Edition</a> <?php echo $g_options['version']; ?></strong><br /><br />
+	<strong>&nbsp;<a href="http://www.hlxcommunity.com">HLstatsX: Curated Edition</a> <?php echo $g_options['version']; ?></strong><br /><br />
 	<table style="width:100%;border:0;padding:1px;border-spacing:0;">
 		<tr class="data-table-head">
 			<td class="fSmall data-table" colspan="3">&nbsp;Commands display the results ingame</td>

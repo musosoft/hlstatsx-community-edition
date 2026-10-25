@@ -67,16 +67,24 @@ class Auth
 	var $sessionStart, $session;
 
 	var $userdata = array();
+	var $csrfRejected = false;
 
 	function __construct()
 	{
 		//@session_start();
 
-		if (valid_request($_POST['authusername'], false))
+		if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && isset($_POST['authusername']))
 		{
-			$this->username = valid_request($_POST['authusername'], false);
-			$this->password = valid_request($_POST['authpassword'], false);
-			$this->savepass = valid_request($_POST['authsavepass'], false);
+			if (!hlxCheckCsrf())
+			{
+				$this->error = 'The login form expired. Please try again.';
+				$this->printAuth();
+				return;
+			}
+
+			$this->username = (is_string($_POST['authusername']) && strlen($_POST['authusername']) <= 16) ? trim($_POST['authusername']) : '';
+			$this->password = (isset($_POST['authpassword']) && is_string($_POST['authpassword'])) ? $_POST['authpassword'] : '';
+			$this->savepass = 0;
 			$this->sessionStart = 0;
 
 			# clear POST vars so as not to confuse the receiving page
@@ -87,19 +95,22 @@ class Auth
 
 			if($this->checkPass()==true)
 			{
+				session_regenerate_id(true);
 				// if we have success, save it in this users SESSION
+				$_SESSION['csrf_token'] = bin2hex(random_bytes(32));
 				$_SESSION['username']=$this->username;
-				$_SESSION['password']=$this->password;
+				$_SESSION['auth_password_hash']=$this->userdata['password'];
+				unset($_SESSION['password']);
 				$_SESSION['authsessionStart']=time();
 				$_SESSION['acclevel'] = $this->userdata['acclevel'];
 			}
 		}
 		elseif (isset($_SESSION['loggedin']))
 		{
-			$this->username = $_SESSION['username'];
-			$this->password = $_SESSION['password'];
+			$this->username = (isset($_SESSION['username']) && is_string($_SESSION['username'])) ? $_SESSION['username'] : '';
+			$this->password = null;
 			$this->savepass = 0;
-			$this->sessionStart = $_SESSION['authsessionStart'];
+			$this->sessionStart = isset($_SESSION['authsessionStart']) && is_numeric($_SESSION['authsessionStart']) ? (int)$_SESSION['authsessionStart'] : 0;
 			$this->ok = true;
 			$this->error = false;
 			$this->session = true;
@@ -107,6 +118,11 @@ class Auth
 			if(!$this->checkPass())
 			{
 				unset($_SESSION['loggedin']);
+			}
+			elseif (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && !hlxCheckCsrf())
+			{
+				$_POST = array();
+				$this->csrfRejected = true;
 			}
 		}
 		else
@@ -130,7 +146,7 @@ class Auth
 				FROM
 					hlstats_Users
 				WHERE
-					username='$this->username'
+					username='" . $db->escape($this->username) . "'
 				LIMIT 1
 			");
 
@@ -141,8 +157,48 @@ class Auth
 			$this->userdata = $db->fetch_array();
 			$db->free_result();
 
-			if (hash("ripemd128", $this->password) == $this->userdata["password"])
+			$storedHash = (string)$this->userdata['password'];
+			$verifiedHash = false;
+			$rehydratedLegacySession = false;
+			if ($this->session)
 			{
+				$sessionHash = $_SESSION['auth_password_hash'] ?? null;
+				if (is_string($sessionHash) && hash_equals($storedHash, $sessionHash))
+				{
+					$verifiedHash = $storedHash;
+				}
+				elseif (isset($_SESSION['password']) && is_string($_SESSION['password']))
+				{
+					// Migrate an already active legacy session without keeping its
+					// plaintext password in the session after this request.
+					$verifiedHash = hlxVerifyAdminPassword($_SESSION['password'], $storedHash);
+					$rehydratedLegacySession = $verifiedHash !== false;
+				}
+			}
+			else
+			{
+				$verifiedHash = hlxVerifyAdminPassword($this->password, $storedHash);
+			}
+
+			if ($verifiedHash !== false)
+			{
+				if ($verifiedHash !== $storedHash)
+				{
+					$db->query("UPDATE `hlstats_Users` SET `password`='" . $db->escape($verifiedHash) . "' WHERE `username`='" . $db->escape($this->username) . "'");
+					$this->userdata['password'] = $verifiedHash;
+				}
+
+				if ($this->session)
+				{
+					$_SESSION['auth_password_hash'] = $verifiedHash;
+					unset($_SESSION['password']);
+					if ($rehydratedLegacySession)
+					{
+						session_regenerate_id(true);
+						$_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+					}
+				}
+
 				// The username and the password are OK
 
 				$this->ok = true;
@@ -151,7 +207,6 @@ class Auth
 				if ($this->sessionStart > (time() - 3600))
 				{
 					// Valid session, update session time & display the page
-					$this->doCookies();
 					return true;
 				}
 				elseif ($this->sessionStart)
@@ -161,7 +216,6 @@ class Auth
 					{
 						// They selected 'Save my password' so we just
 						// generate a new session and show the page.
-						$this->doCookies();
 						return true;
 					}
 					else
@@ -176,9 +230,8 @@ class Auth
 				}
 				elseif (!$this->session)
 				{
-					// No session and no cookies, but the user/pass was
-					// POSTed, so we generate cookies.
-					$this->doCookies();
+					// The login POST was validated; the constructor establishes the
+					// session using only the stored password hash as its proof.
 					return true;
 				}
 				else
@@ -330,7 +383,7 @@ class EditList
 
 		$okcols = 0;
 		foreach ($this->columns as $col) {
-			$value = (!empty($_POST["new_$col->name"])) ? mystripslashes($_POST["new_$col->name"]) : '';
+			$value = (isset($_POST["new_$col->name"]) && $_POST["new_$col->name"] !== '') ? mystripslashes($_POST["new_$col->name"]) : '';
 			//  legacy code that should have never been here. these should never be html-escaped in the db.
 			//  if there's a problem with removing this, it needs to be fixed on the web/display end
 			//  -psychonic
@@ -365,7 +418,15 @@ class EditList
 
 					if ($col->type == 'password' && $col->name != 'rcon_password')
 					{
-						$value = hash("ripemd128", $value, );
+						$hashedPassword = hlxAdminPasswordHash($value);
+						if ($hashedPassword === false)
+						{
+							$this->errors[] = "Column '$col->title' must be at most 72 bytes with the current password algorithm.";
+							$this->newerror = true;
+							$okcols++;
+							continue;
+						}
+						$value = $hashedPassword;
 					}
 					$qvals .= "'" . $db->escape($value) . "'";
 
@@ -474,7 +535,24 @@ class EditList
 
 					if ($col->type == 'password' && $col->name != 'rcon_password')
 					{
-						$query .= $col->name . "='" . hash("ripemd128",$value) . "'";
+						if (is_string($value) && $value !== '')
+						{
+							$hashedPassword = hlxAdminPasswordHash($value);
+							if ($hashedPassword === false)
+							{
+								$this->errors[] = "Column '$col->title' must be at most 72 bytes with the current password algorithm.";
+								$rowerror = true;
+								$query .= $col->name . '=' . $col->name;
+							}
+							else
+							{
+								$query .= $col->name . "='" . $db->escape($hashedPassword) . "'";
+							}
+						}
+						else
+						{
+							$query .= $col->name . '=' . $col->name;
+						}
 					}
 					else
 					{
@@ -1003,8 +1081,12 @@ if($auth->ok===false)
 
 pageHeader(array('Admin'), array('Admin' => ''));
 
+if ($auth->csrfRejected) {
+	message('warning', 'The form was missing a valid security token. Nothing was changed; please submit it again.');
+}
+
 $selTask = valid_request($_GET['task'], false);
-$selGame = valid_request($_GET['game'], false);
+$selGame = valid_game_code($_GET['game'] ?? '');
 ?>
 
 <table width="100%" align="center" border="0" cellspacing="0" cellpadding="0">
@@ -1081,12 +1163,16 @@ if (!empty($admintasks[$selTask]) && ($admintasks[$selTask]->type == 'tool' || $
 	$task = $admintasks[$selTask];
 
 	$code = $selTask;
+	if ($auth->userdata['acclevel'] >= $task->acclevel) {
 ?>
 &nbsp;<img src="<?php echo IMAGE_PATH; ?>/downarrow.gif" width="9" height="6" alt="" /><b>&nbsp;<a href="<?php echo $g_options['scripturl']; ?>?mode=admin">Tools</a></b><br />
 <img src="<?php echo IMAGE_PATH; ?>/spacer.gif" width="1" height="8" border="0" alt="" /><br />
 
 <?php
 	include (PAGE_PATH . "/admintasks/$code.php");
+	} else {
+		error('Access denied!', false);
+	}
 }
 else
 {
@@ -1105,6 +1191,7 @@ else
 &nbsp;&nbsp;&nbsp;&nbsp;<img src="<?php echo IMAGE_PATH; ?>/downarrow.gif" width="9" height="6" alt="" /><b>&nbsp;<a href="<?php echo $g_options['scripturl']; ?>?mode=admin" name="<?php echo $code; ?>"><?php echo $task->title; ?></a></b><br /><br />
 
 <form method="post" action="<?php echo $g_options['scripturl']; ?>?mode=admin&amp;task=<?php echo $code; ?>#<?php echo $code; ?>">
+<?php echo hlxCsrfField(); ?>
 
 <table width="100%" border="0" cellspacing="0" cellpadding="0">
 
@@ -1163,6 +1250,7 @@ else
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<img src="<?php echo IMAGE_PATH; ?>/downarrow.gif" width="9" height="6" alt="" /><b>&nbsp;<a href="<?php echo $g_options['scripturl']; ?>?mode=admin&amp;game=<?php echo $gamecode; ?>" name="<?php echo $code; ?>"><?php echo $task->title; ?></a></b><br /><br />
 
 <form method="post" name="<?php echo $code; ?>form" action="<?php echo $g_options['scripturl']; ?>?mode=admin&amp;game=<?php echo $gamecode; ?>&task=<?php echo $code; ?>#<?php echo $code; ?>">
+<?php echo hlxCsrfField(); ?>
 
 <table width="100%" border="0" cellspacing="0" cellpadding="0">
 

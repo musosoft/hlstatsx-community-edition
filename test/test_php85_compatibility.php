@@ -13,6 +13,11 @@ function check_compatibility($condition, $message)
     }
 }
 
+function hlxCsrfField()
+{
+    return '<input type="hidden" name="csrf_token" value="fixture-token" />';
+}
+
 define('IN_HLSTATS', true);
 define('IMAGE_PATH', '/test-only-images');
 $auth = (object) array('userdata' => array('acclevel' => 80));

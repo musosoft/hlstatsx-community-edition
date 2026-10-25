@@ -143,7 +143,6 @@ sub sendrecv
   my $auth      = $self->{"auth"};
   my $response  = "";
   my $packet_id = $self->{"packet_id"};
-  
   if (($r_socket) && ($r_socket->connected() )) {
     if ($auth == 0)  {
       &::printEvent("TRCON", "Trying to get rcon access (auth)");

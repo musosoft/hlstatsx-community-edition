@@ -109,6 +109,92 @@ function valid_request($str, $numeric = false)
 	return -1;
 }
 
+/** Resolve a visitor-selected stylesheet to an existing filename, or default. */
+function hlxResolveStylesheet($requested, $fallback)
+{
+	$resolve = static function ($filename) {
+		if (!is_string($filename) || !preg_match('/^[A-Za-z0-9_-]+\.css$/D', $filename)) {
+			return null;
+		}
+
+		$path = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'styles' . DIRECTORY_SEPARATOR . $filename;
+		return is_file($path) ? $filename : null;
+	};
+
+	return $resolve($requested) ?: $resolve($fallback) ?: 'classic.css';
+}
+
+/**
+ * Validate a game code before it is used in SQL or reflected into URLs.
+ * Game codes are identifiers, not free-form search text.
+ */
+function valid_game_code($value)
+{
+	if (!is_string($value) || !preg_match('/^[A-Za-z0-9_.-]{1,32}$/D', $value)) {
+		return '';
+	}
+
+	return $value;
+}
+
+/** Create a modern password hash without silently truncating bcrypt input. */
+function hlxAdminPasswordHash($password)
+{
+	if (!is_string($password) || (PASSWORD_DEFAULT === PASSWORD_BCRYPT && strlen($password) > 72)) {
+		return false;
+	}
+
+	return password_hash($password, PASSWORD_DEFAULT);
+}
+
+/**
+ * Verify a modern hash or legacy RIPEMD-128 hash. Return the current hash,
+ * a replacement hash when an upgrade is due, or false for invalid credentials.
+ */
+function hlxVerifyAdminPassword($password, $storedHash)
+{
+	if (!is_string($password) || !is_string($storedHash)) {
+		return false;
+	}
+
+	if (password_verify($password, $storedHash)) {
+		if (password_needs_rehash($storedHash, PASSWORD_DEFAULT)) {
+			return hlxAdminPasswordHash($password);
+		}
+		return $storedHash;
+	}
+
+	$legacyHash = hash('ripemd128', $password);
+	if (strlen($storedHash) === 32 && ctype_xdigit($storedHash) && hash_equals($storedHash, $legacyHash)) {
+		return hlxAdminPasswordHash($password);
+	}
+
+	return false;
+}
+
+function hlxCsrfToken()
+{
+	if (!isset($_SESSION['csrf_token']) || !is_string($_SESSION['csrf_token']) || !preg_match('/^[a-f0-9]{64}$/', $_SESSION['csrf_token'])) {
+		$_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+	}
+	return $_SESSION['csrf_token'];
+}
+
+function hlxCsrfField()
+{
+	return '<input type="hidden" name="csrf_token" value="' . htmlspecialchars(hlxCsrfToken(), ENT_QUOTES, 'UTF-8') . '" />';
+}
+
+function hlxCheckCsrf($token = null)
+{
+	if ($token === null) {
+		$token = isset($_POST['csrf_token']) && is_string($_POST['csrf_token']) ? $_POST['csrf_token'] : '';
+	}
+	return is_string($token) && $token !== ''
+		&& isset($_SESSION['csrf_token']) && is_string($_SESSION['csrf_token'])
+		&& hash_equals($_SESSION['csrf_token'], $token);
+}
+
 /**
  * timestamp_to_str()
  * 

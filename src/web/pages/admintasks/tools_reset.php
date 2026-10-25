@@ -926,6 +926,7 @@ function name_history_checked()
 
 </script>
 <form name="resetform" method="post">
+<?php echo hlxCsrfField(); ?>
 <table width="600" align="center" border="0" cellspacing="0" cellpadding="0" class="border">
 
 <tr>

@@ -117,7 +117,11 @@ sub error
 	
 	if ($g_mailto && $g_mailpath)
 	{
-		system("echo \"$errormsg\" | $g_mailpath -s \"HLstatsX:CE crashed `date`\" $g_mailto");
+		my $subject = "HLstatsX:CE crashed " . scalar localtime();
+		if (open(my $mail, '|-', $g_mailpath, '-s', $subject, $g_mailto)) {
+			print {$mail} $errormsg;
+			close($mail);
+		}
 	}
 
 	die("$errormsg\n");

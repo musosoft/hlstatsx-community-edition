@@ -134,7 +134,7 @@ function f_num($number) {
 	} elseif (isset($_GET['steam_id']) && isset($_GET['game'])) {
 		$steam_id = valid_request($_GET['steam_id'], false);
 		$steam_id = preg_replace('/^STEAM_\d+?\:/i','',$steam_id);
-		$game = valid_request($_GET['game'], false);
+		$game = valid_game_code($_GET['game']);
 
 		$steam_id_escaped=$db->escape($steam_id);
 		$game_escaped=$db->escape($game);

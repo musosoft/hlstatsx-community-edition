@@ -56,7 +56,7 @@ For support and installation notes visit http://www.hlxcommunity.com
 	
 	$num_games = $db->num_rows($resultGames);
 	$redirect_to_game = 0;  
-	$game = (!empty($_GET['game'])) ? valid_request($_GET['game'], false) : null;
+	$game = valid_game_code($_GET['game'] ?? '') ?: null;
 
 	if ($num_games == 1 || !empty($game)) {
 		$redirect_to_game++;

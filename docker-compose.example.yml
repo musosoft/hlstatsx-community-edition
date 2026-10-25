@@ -1,4 +1,3 @@
-version: '2.2'
 services:
   # 1. Counter-Strike 1.6 gameserver sends UDP logs to the daemon
   # See: https://github.com/startersclan/docker-sourceservers
@@ -19,6 +18,29 @@ services:
       - |
           set -eu
           exec hlds_linux -console -noipx -secure -game cstrike +map de_dust2 +maxplayers 32 +sv_lan 0 +ip 0.0.0.0 +port 27015 +rcon_password password +log on +logaddress_add 10.5.0.50 27500
+
+  # Optional Counter-Strike: Source smoke-test server (disabled unless profile is selected).
+  # Start with: docker compose --profile css-test up -d css
+  # Set CSS_RCON_PASSWORD to a private value before exposing this server.
+  css:
+    profiles: ["css-test"]
+    image: sourceservers/cstrike:latest
+    ports:
+      - 27016:27016/tcp
+      - 27016:27016/udp
+    networks:
+      default:
+        ipv4_address: 10.5.0.102
+    stdin_open: true
+    tty: true
+    stop_signal: SIGKILL
+    depends_on:
+      - daemon
+    command: >-
+      exec srcds_linux -game cstrike -console -noipx -port 27016 +map de_dust2
+      +maxplayers 16 +sv_lan 0 +ip 0.0.0.0
+      +rcon_password ${CSS_RCON_PASSWORD:-replace-this}
+      +log on +logaddress_add 10.5.0.50:27500
 
   # Uncomment to test CS2     
   # 1. Counter-Strike 2 gameserver sends HTTP logs to source-udp-forwarder
@@ -65,7 +87,10 @@ services:
   # 3. HLStatsX:CE perl daemon accepts the gameserver logs. Gameserver Logs are parsed and stats are recorded
   # The daemon's proxy_key secret can only be setup in the HLStatsX:CE Web Admin Panel Settings under 'Proxy Settings' section
   daemon:
-    image: startersclan/hlstatsx-community-edition:1.11.6-daemon
+    image: hlstatsx-curated-edition:1.13.0-ce-daemon
+    build:
+      context: .
+      dockerfile: Dockerfile.daemon
     ports:
       - 27500:27500/udp   # For external servers to send logs to the daemon
     networks:
@@ -87,7 +112,7 @@ services:
 
   # Cron - awards
   awards:
-    image: startersclan/hlstatsx-community-edition:1.11.6-daemon
+    image: hlstatsx-curated-edition:1.13.0-ce-daemon
     stop_signal: SIGKILL
     entrypoint:
       - /bin/sh
@@ -134,7 +159,10 @@ services:
   # Available at http://localhost:8081, or https://web.example.com
   # Admin Panel username: admin, password: 123456
   web:
-    image: startersclan/hlstatsx-community-edition:1.11.6-web
+    image: hlstatsx-curated-edition:1.13.0-ce-web
+    build:
+      context: .
+      dockerfile: Dockerfile.web
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=hlstatsx-community-edition_traefik-network"
@@ -168,7 +196,7 @@ services:
 
   # Cron - Heatmaps
   heatmaps:
-    image: startersclan/hlstatsx-community-edition:1.11.6-web
+    image: hlstatsx-curated-edition:1.13.0-ce-web
     volumes:
       - games-volume:/web/hlstatsimg/games  # Stateful games volume, which also contains heatmaps
     environment:

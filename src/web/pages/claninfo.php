@@ -131,10 +131,6 @@
 		$clandata['name']
 	);
 
-	if ($g_options['show_google_map'] == 1) {
-		echo ('<script src="http://maps.google.com/maps/api/js?callback=Function.prototype&key=' . GOOGLE_MAPS_API_KEY . '" type="text/javascript"></script>');
-	}
-
     $members_page = (empty($_GET['members_page'])) ? "Unknown" : valid_request($_GET['members_page'], true);
 ?>
 

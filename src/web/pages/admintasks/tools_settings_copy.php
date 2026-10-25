@@ -171,7 +171,7 @@ function scanCopyFiles($source,$dest) {
 		
 		echo '<ul><br />';
 		check_writable();
-		$game2 = valid_request($game2, false);
+		$game2 = valid_game_code($game2);
 		$game2name = valid_request($game2name, false);
 		echo '<li>hlstats_Games ...';
 		$db->query("SELECT code FROM hlstats_Games WHERE code='$game2' LIMIT 1;");
@@ -229,6 +229,7 @@ function scanCopyFiles($source,$dest) {
 ?>
 
 <form method="post">
+<?php echo hlxCsrfField(); ?>
 <table width="60%" align="center" border="0" cellspacing="0" cellpadding="0" class="border">
 
 <tr>

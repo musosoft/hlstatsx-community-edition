@@ -84,7 +84,7 @@ to sub-daemons (hlstats.pl).
   -c, --configfile                Specific configfile to use, settings in this file can't
                                     be overided with commandline settings.
 
-HLstatsX: Community Edition http://www.hlxcommunity.com
+HLstatsX: Curated Edition http://www.hlxcommunity.com
 EOT
 ;
 
@@ -441,7 +441,9 @@ while ($server->recv($datagram,1024,$flags)) {
 		&printEvent("NOTICE", "Skipping message...", 1) if ($g_debug > 1);
 	} else {
 		if (defined($srv_list{$ipaddr}{$ipport}{'dest_ip'}) && defined($srv_list{$ipaddr}{$ipport}{'dest_port'})) {
-			$datagram =~ s/^.*RL /RL /g;
+			# Strip only the packet header; a greedy RL match corrupts signed
+			# sv_logsecret lines containing "RL ".
+			$datagram =~ s/^\xff+//;
 
 			&printEvent("NOTICE", "Sending $datagram to daemon $srv_list{$ipaddr}{$ipport}{'dest_ip'}:$srv_list{$ipaddr}{$ipport}{'dest_port'}", 1) if ($g_debug > 1);	
 			# Sedning actual message to the daemon.
@@ -453,4 +455,3 @@ while ($server->recv($datagram,1024,$flags)) {
 		}
 	}
 }
-

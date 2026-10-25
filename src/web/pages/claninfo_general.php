@@ -410,7 +410,7 @@ printSectionTitle('Clan Information');
 <br /><br />
 <?php
 	if ( $g_options['show_google_map'] == 1 ) {
-		include(INCLUDE_PATH . '/google_maps.php');
-		printMap('clan');
+		include(INCLUDE_PATH . '/openstreetmap.php');
+		hlxPrintOsmMap('clan');
 	}
 ?>

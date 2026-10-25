@@ -1652,7 +1652,7 @@ Most options can be specified in the configuration file:
 Note: Options set on the command line take precedence over options set in the
 configuration file. The configuration file name is set at the top of hlstats.pl.
 
-HLstatsX: Community Edition http://www.hlxcommunity.com
+HLstatsX: Curated Edition http://www.hlxcommunity.com
 EOT
 ;
 
@@ -1682,9 +1682,13 @@ sub readDatabaseConfig()
 		if ($g_debug > 1) {
 			print "Config parameter '$p' = '$v'\n";
 		}
-		$tmp = "\$".$directives_mysql{$p}." = '$v'";
-		#print " -> setting ".$tmp."\n";
-		eval $tmp;
+		# Configuration values are data, never source code to eval.
+		my $var = $directives_mysql{$p};
+		next unless (defined($var) && $var =~ /^\w+$/);
+		{
+			no strict 'refs';
+			${"main::$var"} = $v;
+		}
 	}
 	$gsettings->finish;
 	# setting defaults
@@ -1775,6 +1779,9 @@ sub readDatabaseConfig()
 		}
 		if (!defined($g_config_servers{$addr}{"DefaultDisplayEvents"})) {
 			$g_config_servers{$addr}{"DefaultDisplayEvents"}			= 1;
+		}
+		if (!defined($g_config_servers{$addr}{"LogSecret"})) {
+			$g_config_servers{$addr}{"LogSecret"}						= "";
 		}
 	}
 
@@ -1931,7 +1938,7 @@ if ($opt_version) {
 		$g_version = $result->fetchrow_array;
 	}
 	$result->finish;
-	print "\nhlstats.pl (HLstatsX Community Edition) Version $g_version\n"
+	print "\nhlstats.pl (HLstatsX: Curated Edition) Version $g_version\n"
 		. "Real-time player and clan rankings and statistics for Half-Life 2\n"
 		. "Modified (C) 2008-20XX  Nicholas Hastings (nshastings@gmail.com)\n"
 		. "Copyleft (L) 2007-2008  Malte Bayer\n"
@@ -1970,7 +1977,7 @@ $ev_daemontime = $ev_unixtime;
 
 # Startup
 
-&printEvent("HLSTATSX", "HLstatsX:CE $g_version starting...", 1);
+&printEvent("HLSTATSX", "HLstatsX: Curated Edition $g_version starting...", 1);
 
 # Create the UDP & TCP socket
 
@@ -2030,7 +2037,7 @@ if ($g_global_chat == 1) {
 
 %g_servers = ();
 
-&printEvent("HLSTATSX", "HLstatsX:CE is now running ($g_mode mode, debug level $g_debug)", 1);
+&printEvent("HLSTATSX", "HLstatsX: Curated Edition is now running ($g_mode mode, debug level $g_debug)", 1);
 
 $start_time    = time();
 if ($g_stdin) {
@@ -2174,6 +2181,21 @@ while ($loop = &getLine()) {
 		$s_output =~ s/\[OLD.C-D\]//g;	# remove [OLD C-D] tag
 		$s_output =~ s/\[NOCL\]//g;	# remove [NOCL] tag
 
+		# Source's sv_logsecret signs log lines as "S<secret>L ...". Once
+		# configured, reject unsigned or incorrectly signed packets for this
+		# server. Keep stdin imports and servers without a secret compatible.
+		if (!$g_stdin && defined($g_config_servers{$s_addr})) {
+			my $log_secret = $g_config_servers{$s_addr}{"LogSecret"} // "";
+			if ($log_secret ne "" && $s_output !~ /^[^A-Za-z0-9]*S\Q$log_secret\EL /) {
+				if (!defined($g_logsecret_warned{$s_addr}) || $g_logsecret_warned{$s_addr} < time() - 60) {
+					$g_logsecret_warned{$s_addr} = time();
+					&printEvent(997, "LOG SECRET MISMATCH: dropping unsigned log lines for $s_addr");
+				}
+				&printEvent(997, "LOG SECRET MISMATCH: " . $s_output) if ($g_debug > 1);
+				next;
+			}
+		}
+
 		# Get the server info, if we know the server, otherwise ignore the data
 		if (!defined($g_servers{$s_addr})) {
 			if (($g_onlyconfig_servers == 1) && (!defined($g_config_servers{$s_addr}))) {
@@ -2219,6 +2241,7 @@ while ($loop = &getLine()) {
 				$std_cfg{"UpdateHostname"}					= 0;
 				$std_cfg{"ConnectAnnounce"}					= 1;
 				$std_cfg{"DefaultDisplayEvents"}			= 1;
+				$std_cfg{"LogSecret"}						= "";
 				%{$g_config_servers{$s_addr}}				= %std_cfg;
 				&printEvent("CFG", "Created default config for unknown server [$s_addr]");
 				&printEvent("DETECT", "New server with game: " . &getServerMod($s_peerhost, $s_peerport));
@@ -2457,7 +2480,18 @@ while ($loop = &getLine()) {
 			$ev_min   = $5;
 			$ev_sec   = $6;
 			$ev_time  = "$ev_hour:$ev_min:$ev_sec";
-			$ev_remotetime  = timelocal($ev_sec,$ev_min,$ev_hour,$ev_day,$ev_month-1,$ev_year);
+			# Time::Local can throw for malformed calendar/time fields. A bad
+			# packet must not terminate the daemon or reuse the previous event time.
+			my $parsed_remotetime;
+			my $timestamp_ok = eval {
+				$parsed_remotetime = timelocal($ev_sec,$ev_min,$ev_hour,$ev_day,$ev_month-1,$ev_year);
+				1;
+			};
+			if (!$timestamp_ok || !defined($parsed_remotetime)) {
+				&printEvent(998, "MALFORMED TIMESTAMP: $ev_month/$ev_day/$ev_year - $ev_time");
+				next;
+			}
+			$ev_remotetime = $parsed_remotetime;
 			
 			if ($g_timestamp) {
 				$ev_timestamp = "$ev_year-$ev_month-$ev_day $ev_time";

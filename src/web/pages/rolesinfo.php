@@ -43,7 +43,9 @@ For support and installation notes visit http://www.hlxcommunity.com
 	// Roles Details
 	
 	$role = valid_request($_GET['role'], false) or error('No role ID specified.');
-	
+	$roleSql = $db->escape($role);
+	$gameSql = $db->escape($game);
+
 	$db->query("
 		SELECT
 			hlstats_Roles.name,
@@ -51,8 +53,8 @@ For support and installation notes visit http://www.hlxcommunity.com
 		FROM
 			hlstats_Roles
 		WHERE
-			hlstats_Roles.code='$role'
-			AND hlstats_Roles.game='$game'
+			hlstats_Roles.code='$roleSql'
+			AND hlstats_Roles.game='$gameSql'
 	");
 	
 	if ($db->num_rows() != 1) {
@@ -65,7 +67,7 @@ For support and installation notes visit http://www.hlxcommunity.com
 		$role_code = $roledata['code'];
 	}
 
-	$db->query("SELECT name FROM hlstats_Games WHERE code='$game'");
+	$db->query("SELECT name FROM hlstats_Games WHERE code='$gameSql'");
 	if ($db->num_rows() != 1) {
 		error('Invalid or no game specified.');
 	} else {
@@ -114,7 +116,7 @@ For support and installation notes visit http://www.hlxcommunity.com
 		WHERE
 			hlstats_Players.playerId = hlstats_Events_Frags.killerId
 			AND hlstats_Events_Frags.killerRole='$role'
-			AND hlstats_Players.game='$game'
+			AND hlstats_Players.game='$gameSql'
 			AND hlstats_Players.hideranking<>'1'
 		GROUP BY
 			hlstats_Events_Frags.killerId
@@ -135,7 +137,7 @@ For support and installation notes visit http://www.hlxcommunity.com
 		WHERE
 			hlstats_Servers.serverId = hlstats_Events_Frags.serverId
 			AND hlstats_Events_Frags.killerRole='$role'
-			AND hlstats_Servers.game='$game'
+			AND hlstats_Servers.game='$gameSql'
 	");
 	
 	list($numitems, $totalkills, $totalheadshots) = $db->fetch_row($resultCount);

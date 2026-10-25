@@ -40,7 +40,8 @@ For support and installation notes visit http://www.hlxcommunity.com
         die('Do not access this file directly.');
     }
 
-// Country Clan Rankings
+	// Country Clan Rankings
+	$gameSql = $db->escape($game);
 	$db->query
 	("
 		SELECT
@@ -48,7 +49,7 @@ For support and installation notes visit http://www.hlxcommunity.com
 		FROM
 			hlstats_Games
 		WHERE
-			hlstats_Games.code = '$game'
+			hlstats_Games.code = '$gameSql'
 	");
 
 	if ($db->num_rows() < 1) {
@@ -149,7 +150,7 @@ For support and installation notes visit http://www.hlxcommunity.com
 		ON
 			hlstats_Players.flag = hlstats_Countries.flag
 		WHERE
-			hlstats_Players.game = '$game'
+			hlstats_Players.game = '$gameSql'
 			AND hlstats_Players.hideranking = 0
 			AND IF(".$g_options['MinActivity']." > (UNIX_TIMESTAMP() - hlstats_Players.last_event), ((100 / ".$g_options['MinActivity'].") * (".$g_options['MinActivity']." - (UNIX_TIMESTAMP() - hlstats_Players.last_event))), -1) >= 0
 		GROUP BY
@@ -177,7 +178,7 @@ For support and installation notes visit http://www.hlxcommunity.com
 		ON
 			hlstats_Players.flag = hlstats_Countries.flag
 		WHERE
-			hlstats_Players.game = '$game'
+			hlstats_Players.game = '$gameSql'
 			AND hlstats_Players.hideranking = 0
 		GROUP BY
 			hlstats_Countries.flag
@@ -204,7 +205,7 @@ For support and installation notes visit http://www.hlxcommunity.com
 			hlstats_Players
 		WHERE
 			hlstats_Players.flag NOT LIKE ''
-			AND hlstats_Players.game = '$game'
+			AND hlstats_Players.game = '$gameSql'
 			AND hlstats_Players.hideranking = 0
 	");
 	

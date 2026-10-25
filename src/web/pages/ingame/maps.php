@@ -44,7 +44,7 @@ For support and installation notes visit http://www.hlxcommunity.com
 	
 	$player = valid_request(intval($_GET['player']), true);
 	$uniqueid  = valid_request(strval($_GET['uniqueid']), false);
-	$game = valid_request(strval($_GET['game']), false);
+	$game = valid_game_code($_GET['game'] ?? '');
 	
 	if (!$player && $uniqueid) {
 		if (!$game) {
@@ -218,8 +218,8 @@ For support and installation notes visit http://www.hlxcommunity.com
 		LEFT JOIN hlstats_Servers ON
 			hlstats_Servers.serverId=hlstats_Events_Frags.serverId
 		WHERE
-			hlstats_Servers.game='$game' AND killerId='$player'
-			OR victimId='$player'
+			hlstats_Servers.game='$game'
+			AND (killerId='$player' OR victimId='$player')
 		GROUP BY
 			map
 		ORDER BY

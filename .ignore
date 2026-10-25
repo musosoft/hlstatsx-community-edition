@@ -3,4 +3,6 @@
 !.slim/worktrees.json
 !.slim/worktrees/
 !.slim/worktrees/**
+!.slim/deepwork/
+!.slim/deepwork/**
 # END oh-my-opencode-slim worktrees

@@ -40,7 +40,8 @@ For support and installation notes visit http://www.hlxcommunity.com
         die('Do not access this file directly.');
     }
 
-// Clan Rankings
+	// Clan Rankings
+	$gameSql = $db->escape($game);
 	$db->query
 	("
 		SELECT
@@ -48,7 +49,7 @@ For support and installation notes visit http://www.hlxcommunity.com
 		FROM
 			hlstats_Games
 		WHERE
-			hlstats_Games.code = '$game'
+			hlstats_Games.code = '$gameSql'
 	");
 
 	if ($db->num_rows() < 1) {
@@ -152,7 +153,7 @@ For support and installation notes visit http://www.hlxcommunity.com
 			hlstats_Clans,
 			hlstats_Players
 		WHERE
-			hlstats_Clans.game = '$game'
+			hlstats_Clans.game = '$gameSql'
 			AND hlstats_Clans.hidden <> 1
 			AND hlstats_Players.clan = hlstats_Clans.clanId
 			AND hlstats_Players.hideranking = 0
@@ -181,7 +182,7 @@ For support and installation notes visit http://www.hlxcommunity.com
 		ON
 			hlstats_Players.clan = hlstats_Clans.clanId
 		WHERE
-			hlstats_Clans.game = '$game'
+			hlstats_Clans.game = '$gameSql'
 			AND hlstats_Clans.hidden <> 1
 			AND hlstats_Players.hideranking = 0
 		GROUP BY
@@ -220,7 +221,7 @@ For support and installation notes visit http://www.hlxcommunity.com
 						FROM
 							hlstats_Clans
 						WHERE
-							hlstats_Clans.game = '$game'
+							hlstats_Clans.game = '$gameSql'
 					");
 
                     list($total_clans) = $db->fetch_row();

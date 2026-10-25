@@ -1,4 +1,5 @@
 .weapon {text-decoration: none;}
+.hlx-osm-map { box-sizing: border-box; width: 100%; max-width: 870px; height: 380px; margin: 10px auto; color: #19283b; background: #e8edf3; }
 input, textarea, select {font-family: Verdana, Arial, sans-serif;font-size: 11px;}
 input.textbox, input.checkbox {border-width: 1px;}
 input.submit {height: 22px;}
