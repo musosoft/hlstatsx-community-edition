@@ -1,0 +1,81 @@
+{
+  "meta": {
+    "slug": "hlstatsx-dark",
+    "name": "HLStatsX Dark",
+    "description": "Thème sombre original fidèlement reproduit",
+    "author": "HLStatsX Team",
+    "version": "1.0.0",
+    "preview": "preview.png"
+  },
+  "colors": {
+    "bg-body":            "#0d1117",
+    "bg-header":          "#0a0f1a",
+    "bg-surface":         "#111827",
+    "bg-surface-alt":     "#161b22",
+    "bg-row-even":        "#0f1623",
+    "bg-row-odd":         "#131c2e",
+    "bg-nav-tab":         "#1f2937",
+    "bg-nav-tab-active":  "#1f6feb",
+    "border":             "#1e293b",
+    "text-primary":       "#c9d1d9",
+    "text-secondary":     "#8b949e",
+    "text-heading":       "#e6edf3",
+    "link":               "#58a6ff",
+    "link-hover":         "#79b8ff",
+    "accent-primary":     "#1f6feb",
+    "accent-secondary":   "#58d9f0",
+    "btn-gold-bg":        "#d4a017",
+    "btn-gold-text":      "#000000",
+    "btn-green-bg":       "#2ea043",
+    "btn-green-text":     "#ffffff",
+    "activity-high":      "#3fb950",
+    "activity-mid":       "#d29922",
+    "activity-low":       "#f85149",
+    "status-online":      "#3fb950",
+    "status-offline":     "#f85149",
+    "chart-line":         "#3fb950",
+    "chart-grid":         "#1e293b",
+    "chart-bg":           "#0d1117",
+    "map-marker":         "#3fb950"
+  },
+  "typography": {
+    "font-family-base":   "'Inter', 'Segoe UI', sans-serif",
+    "font-family-mono":   "'JetBrains Mono', 'Fira Code', monospace",
+    "font-size-base":     "13px",
+    "font-size-sm":       "11px",
+    "font-size-lg":       "15px",
+    "font-weight-normal": "400",
+    "font-weight-bold":   "600",
+    "line-height":        "1.5"
+  },
+  "layout": {
+    "header-height":      "60px",
+    "border-radius-sm":   "4px",
+    "border-radius-md":   "6px",
+    "border-radius-pill": "999px",
+    "row-height":         "28px",
+    "table-padding-x":    "8px",
+    "table-padding-y":    "4px",
+    "container-max-width":"1400px",
+    "sidebar-width":      "220px"
+  },
+  "logo": {
+    "text":               "HLSTATSX: CE",
+    "color":              "#58d9f0",
+    "icon-bg":            "#1f6feb",
+    "show-icon":          true
+  },
+  "header": {
+    "show-social-icons": true,
+    "nav-buttons": [
+      { "label": "Contents", "url": "/",        "color": "#d4a017", "text-color": "#000" },
+      { "label": "Search",   "url": "/search",  "color": "#2ea043", "text-color": "#fff" },
+      { "label": "Forums",   "url": "#",        "color": "#d4a017", "text-color": "#000" },
+      { "label": "Help",     "url": "/help",    "color": "#d4a017", "text-color": "#000" }
+    ]
+  },
+  "charts": {
+    "style":     "dark",
+    "map-tiles": "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+  }
+}

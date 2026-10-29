@@ -1,4 +1,3 @@
-version: '2.2'
 services:
   # 1. Counter-Strike 1.6 gameserver sends UDP logs to the daemon
   # See: https://github.com/startersclan/docker-sourceservers
@@ -139,61 +138,51 @@ services:
 
   # 4. HLStatsX:CE DB
   db:
-    image: mysql:5.7
+    image: ${HLX_TEST_MYSQL_IMAGE:-mysql:26.10}
     environment:
       - MYSQL_ROOT_PASSWORD=root    # Username 'root', password 'root'
       - MYSQL_USER=hlstatsxce
       - MYSQL_PASSWORD=hlstatsxce
       - MYSQL_DATABASE=hlstatsxce
     volumes:
-      - db-volume:/var/lib/mysql
+      - db-volume-mysql2610:/var/lib/mysql
       - ./src/sql/install.sql:/docker-entrypoint-initdb.d/01-install.sql:ro  # This seeds the DB only on the first time
     networks:
       - default
 
-  # 5. HLStatsX:CE web
-  # Available at http://localhost:8081
-  # Admin Panel username: admin, password: 123456
-  web:
+  # Pinned Laravel frontend; requests fail closed until the database reaches DB97.
+  laravel:
+    profiles: [laravel]
     build:
-      dockerfile: Dockerfile.web
-      context: .
-      target: dev
-    volumes:
-      - ./src/web:/web
-      - ./src/web/config.example.php:/web/config.php:ro
-      # - ./config/web/supervisor.conf:/supervisor.conf:ro
-      # - ./config/web/etc/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      # - ./config/web/usr/local/etc/php/conf.d/php.ini:/usr/local/etc/php/conf.d/php.ini:ro
-      # - ./config/web/usr/local/etc/php-fpm.d/php-fpm.conf:/usr/local/etc/php-fpm.d/php-fpm.conf:ro
+      context: ./src/laravel
+      dockerfile: Dockerfile
     environment:
-      # - XDEBUG_MODE=off   # Uncomment to disable xdebug
-      - DB_ADDR=db
-      - DB_NAME=hlstatsxce
-      - DB_USER=hlstatsxce
-      - DB_PASS=hlstatsxce
-      - DB_DEBUG=0
+      APP_ENV: local
+      APP_DEBUG: "false"
+      APP_KEY: ${LARAVEL_APP_KEY:-base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=}
+      APP_INSTALLED: "true"
+      HLSTATS_REQUIRED_DB_VERSION: 97
+      DB_CONNECTION: mysql
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_DATABASE: hlstatsxce
+      DB_USERNAME: ${LARAVEL_DB_USER:-hlstatsxce}
+      DB_PASSWORD: ${LARAVEL_DB_PASSWORD:-hlstatsxce}
     ports:
-      - 8081:80
-      - 9000
+      - 8081:8080
     networks:
       - default
-    extra_hosts:
-      # For xdebug to reach the host via `host.docker.internal`. See: https://github.com/moby/moby/pull/40007#issuecomment-578729356 and https://stackoverflow.com/questions/49907308/installing-xdebug-in-docker
-      # If xdebug does not work, you may need to add an iptables rule to the INPUT chain: iptables -A INPUT -i br+ -j ACCEPT
-      - host.docker.internal:host-gateway
     depends_on:
-      - init-container
+      - db
 
   # Cron - Heatmaps
   heatmaps:
     build:
-      dockerfile: Dockerfile.web
+      dockerfile: Dockerfile.heatmaps
       context: .
-      target: dev
     volumes:
       - ./src/heatmaps:/heatmaps
-      - ./src/web:/web
+      - ./src/laravel/public/hlstatsimg:/web/hlstatsimg
     environment:
       # - XDEBUG_MODE=off   # Uncomment to disable xdebug
       - DB_HOST=db
@@ -210,7 +199,6 @@ services:
       - host.docker.internal:host-gateway
     depends_on:
       - init-container
-      - web
     working_dir: /heatmaps
     stop_signal: SIGKILL
     entrypoint:
@@ -228,12 +216,12 @@ services:
           crontab -l
 
           echo "Running crond"
-          exec crond -f
+          crond -f
 
   # PHPMyAdmin to manage DB
   # Available at http://localhost:8083
   phpmyadmin:
-    image: phpmyadmin:5.2
+    image: phpmyadmin:5.2.3
     environment:
       - PMA_HOST=db
     ports:
@@ -243,10 +231,10 @@ services:
 
   # Init container to set permissions in mounted folders and volumes
   init-container:
-    image: alpine:latest
+    image: alpine:3.24.2
     volumes:
-      - ./src/web:/web
-      - db-volume:/var/lib/mysql
+      - ./src/laravel/public/hlstatsimg/games:/web/hlstatsimg/games
+      - db-volume-mysql2610:/var/lib/mysql
     networks:
       - default
     entrypoint:
@@ -256,13 +244,9 @@ services:
       - |
           set -eu
 
-          echo "Granting web nginx and php read permissions"
-          find /web -type d -exec chmod 755 {} \;
-          find /web -type f -exec chmod 644 {} \;
-
-          echo "Granting web php write permissions"
-          chmod 777 /web/hlstatsimg/progress
-          chmod 777 /web/hlstatsimg/graph
+          echo "Granting heatmap output permissions"
+          find /web/hlstatsimg/games -type d -exec chmod 755 {} \;
+          find /web/hlstatsimg/games -type f -exec chmod 644 {} \;
 
           echo "Granting db write permissions"
           chown -R 999:999 /var/lib/mysql
@@ -276,4 +260,4 @@ networks:
          gateway: 10.5.0.1
 
 volumes:
-  db-volume:
+  db-volume-mysql2610:

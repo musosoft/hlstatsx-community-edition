@@ -1,0 +1,40 @@
+#!/usr/bin/env php
+<?php
+
+use Illuminate\Foundation\Application;
+use Illuminate\Contracts\Console\Kernel as ConsoleKernelContract;
+use Illuminate\Support\Facades\DB;
+use Symfony\Component\Console\Input\ArgvInput;
+
+define('LARAVEL_START', microtime(true));
+
+// Register the Composer autoloader...
+require __DIR__.'/vendor/autoload.php';
+
+// Bootstrap Laravel and handle the command...
+/** @var Application $app */
+$app = require_once __DIR__.'/bootstrap/app.php';
+
+$input = new ArgvInput;
+$command = $input->getFirstArgument();
+
+try {
+    \App\Support\CuratedMigrationPreflight::assertCommandAllowed((string) $command);
+} catch (\Throwable $error) {
+    fwrite(STDERR, $error->getMessage().PHP_EOL);
+    exit(1);
+}
+
+if (\App\Support\CuratedMigrationPreflight::shouldCheck((string) $command)) {
+    try {
+        $app->make(ConsoleKernelContract::class)->bootstrap();
+        \App\Support\CuratedMigrationPreflight::assertSupported(DB::connection());
+    } catch (\Throwable $error) {
+        fwrite(STDERR, $error->getMessage().PHP_EOL);
+        exit(1);
+    }
+}
+
+$status = $app->handleCommand($input);
+
+exit($status);

@@ -1,0 +1,8 @@
+**
+!src
+!src/heatmaps
+!src/heatmaps/**
+!src/laravel
+!src/laravel/public
+!src/laravel/public/hlstatsimg
+!src/laravel/public/hlstatsimg/**

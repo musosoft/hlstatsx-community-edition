@@ -143,51 +143,55 @@ services:
 
   # 4. HLStatsX:CE DB
   db:
-    image: mysql:5.7
+    image: mysql:26.10
     environment:
       - MYSQL_ROOT_PASSWORD=root    # Username 'root', password 'root'
       - MYSQL_USER=hlstatsxce
       - MYSQL_PASSWORD=hlstatsxce
       - MYSQL_DATABASE=hlstatsxce
     volumes:
-      - db-volume:/var/lib/mysql
+      - db-volume-mysql2610:/var/lib/mysql
       - ./src/sql/install.sql:/docker-entrypoint-initdb.d/install.sql:ro  # This seeds the DB only on the first time
     networks:
       - default
 
-  # 5. HLStatsX:CE web
-  # Available at http://localhost:8081, or https://web.example.com
-  # Admin Panel username: admin, password: 123456
-  web:
-    image: hlstatsx-curated-edition:1.13.0-ce-web
+  # 5. HLStatsX:CE Laravel frontend (requires the database to be migrated to DB97)
+  # Configure LARAVEL_APP_KEY, LARAVEL_DB_USER, and LARAVEL_DB_PASSWORD.
+  laravel:
+    image: hlstatsx-curated-edition:laravel
     build:
-      context: .
-      dockerfile: Dockerfile.web
+      context: ./src/laravel
+      dockerfile: Dockerfile
+    environment:
+      APP_ENV: production
+      APP_DEBUG: "false"
+      APP_KEY: ${LARAVEL_APP_KEY:?Set LARAVEL_APP_KEY}
+      APP_INSTALLED: "true"
+      HLSTATS_REQUIRED_DB_VERSION: 97
+      DB_CONNECTION: mysql
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_DATABASE: hlstatsxce
+      DB_USERNAME: ${LARAVEL_DB_USER:?Set LARAVEL_DB_USER}
+      DB_PASSWORD: ${LARAVEL_DB_PASSWORD:?Set LARAVEL_DB_PASSWORD}
     labels:
       - "traefik.enable=true"
-      - "traefik.docker.network=hlstatsx-community-edition_traefik-network"
+      - "traefik.docker.network=${COMPOSE_PROJECT_NAME?err}_traefik-network"
       # traefik v2
       # http
-      - "traefik.http.routers.${COMPOSE_PROJECT_NAME?err}-web-http.entrypoints=web"
-      - "traefik.http.routers.${COMPOSE_PROJECT_NAME?err}-web-http.rule=Host(`web.example.com`)"
-      - "traefik.http.routers.${COMPOSE_PROJECT_NAME?err}-web-http.middlewares=hlstatsx-community-edition-web-http-myRedirectScheme" # Redirect http to https
-      - "traefik.http.middlewares.${COMPOSE_PROJECT_NAME?err}-web-http-myRedirectScheme.redirectScheme.scheme=https" # Redirect http to https
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME?err}-laravel-http.entrypoints=web"
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME?err}-laravel-http.rule=Host(`web.example.com`)"
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME?err}-laravel-http.middlewares=${COMPOSE_PROJECT_NAME?err}-laravel-http-myRedirectScheme" # Redirect http to https
+      - "traefik.http.middlewares.${COMPOSE_PROJECT_NAME?err}-laravel-http-myRedirectScheme.redirectScheme.scheme=https" # Redirect http to https
       # https
-      - "traefik.http.routers.${COMPOSE_PROJECT_NAME?err}-web.entrypoints=websecure"
-      - "traefik.http.routers.${COMPOSE_PROJECT_NAME?err}-web.tls="
-      - "traefik.http.routers.${COMPOSE_PROJECT_NAME?err}-web.rule=Host(`web.example.com`)"
-      - "traefik.http.services.${COMPOSE_PROJECT_NAME?err}-web.loadbalancer.server.port=80"
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME?err}-laravel.entrypoints=websecure"
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME?err}-laravel.tls="
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME?err}-laravel.rule=Host(`web.example.com`)"
+      - "traefik.http.services.${COMPOSE_PROJECT_NAME?err}-laravel.loadbalancer.server.port=8080"
     volumes:
-      - games-volume:/web/hlstatsimg/games  # Stateful games volume, which also contains heatmaps
-    environment:
-      - DB_ADDR=db
-      - DB_NAME=hlstatsxce
-      - DB_USER=hlstatsxce
-      - DB_PASS=hlstatsxce
-      - DB_DEBUG=0
+      - games-volume:/app/public/hlstatsimg/games  # Stateful game assets and heatmaps
     ports:
-      - 127.0.0.1:8081:80
-      - 9000
+      - 127.0.0.1:${LARAVEL_HOST_PORT:-8081}:8080
     networks:
       - traefik-network
       - default
@@ -196,7 +200,10 @@ services:
 
   # Cron - Heatmaps
   heatmaps:
-    image: hlstatsx-curated-edition:1.13.0-ce-web
+    image: hlstatsx-curated-edition:heatmaps
+    build:
+      context: .
+      dockerfile: Dockerfile.heatmaps
     volumes:
       - games-volume:/web/hlstatsimg/games  # Stateful games volume, which also contains heatmaps
     environment:
@@ -210,7 +217,6 @@ services:
       - DEBUG=1
     depends_on:
       - init-container
-      - web
     working_dir: /heatmaps
     stop_signal: SIGKILL
     entrypoint:
@@ -228,20 +234,20 @@ services:
           crontab -l
 
           echo "Running crond"
-          exec crond -f
+          crond -f
 
   # PHPMyAdmin to manage DB
   # Available at http://localhost:8083, or https://phpmyadmin.example.com
   phpmyadmin:
-    image: phpmyadmin:5.2
+    image: phpmyadmin:5.2.3
     labels:
       - "traefik.enable=true"
-      - "traefik.docker.network=hlstatsx-community-edition_traefik-network"
+      - "traefik.docker.network=${COMPOSE_PROJECT_NAME?err}_traefik-network"
       # traefik v2
       # http
       - "traefik.http.routers.${COMPOSE_PROJECT_NAME?err}-phpmyadmin-http.entrypoints=web"
       - "traefik.http.routers.${COMPOSE_PROJECT_NAME?err}-phpmyadmin-http.rule=Host(`phpmyadmin.example.com`)"
-      - "traefik.http.routers.${COMPOSE_PROJECT_NAME?err}-phpmyadmin-http.middlewares=hlstatsx-community-edition-phpmyadmin-http-myRedirectScheme" # Redirect http to https
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME?err}-phpmyadmin-http.middlewares=${COMPOSE_PROJECT_NAME?err}-phpmyadmin-http-myRedirectScheme" # Redirect http to https
       - "traefik.http.middlewares.${COMPOSE_PROJECT_NAME?err}-phpmyadmin-http-myRedirectScheme.redirectScheme.scheme=https" # Redirect http to https
       # https
       - "traefik.http.routers.${COMPOSE_PROJECT_NAME?err}-phpmyadmin.entrypoints=websecure"
@@ -258,9 +264,9 @@ services:
 
   # Init container to set permissions in mounted folders and volumes
   init-container:
-    image: alpine:latest
+    image: alpine:3.24.2
     volumes:
-      - db-volume:/var/lib/mysql
+      - db-volume-mysql2610:/var/lib/mysql
     networks:
       - default
     entrypoint:
@@ -273,11 +279,11 @@ services:
           echo "Granting db write permissions"
           chown -R 999:999 /var/lib/mysql
 
-  # The reverse proxy for our web containers
+  # The reverse proxy for the application containers
   # See https://github.com/traefik/traefik/tree/v2.7/docs/content/user-guides/docker-compose for some examples for enabling HTTPS using ACME
   # You will need a domain name. E.g. 'example.com'
   traefik:
-    image: traefik:v2.10
+    image: traefik:v3.7.16
     volumes:
       # Allow traefik to listen to the Docker events
       - /var/run/docker.sock:/var/run/docker.sock:ro
@@ -315,6 +321,6 @@ networks:
     internal: true
 
 volumes:
-  db-volume:
+  db-volume-mysql2610:
   games-volume:
   traefik-acme-volume:

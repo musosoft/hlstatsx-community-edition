@@ -1,4 +1,4 @@
-FROM alpine:latest AS build
+FROM alpine:3.24.2 AS build
 
 RUN set -eux; \
     # Download the GeoIP binary. Maxmind discontinued distributing the GeoLite Legacy databases. See: https://support.maxmind.com/geolite-legacy-discontinuation-notice/
@@ -21,7 +21,7 @@ RUN set -eux; \
     find /scripts -type f -name 'run_*' -exec chmod 750 {} \;; \
     ls -al /scripts/*
 
-FROM perl:5.38.0-slim-bookworm AS dev
+FROM perl:5.44.0-slim-trixie AS dev
 
 # Install modules
 RUN set -eux; \

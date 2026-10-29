@@ -9,7 +9,8 @@
       "checked_sha": "a5028a78ea8cf11d18081213cfbe6fa18f8aec3c",
       "license": "GPL-2.0",
       "strategy": "canonical-base",
-      "notes": "Current legacy PHP/Perl code line; compare shared history and preserve local ATB work."
+      "merge_base_sha": "a5028a78ea8cf11d18081213cfbe6fa18f8aec3c",
+      "notes": "Current legacy PHP/Perl code line; shared history with main. Preserve local ATB work and merge canonical updates through reviewed PRs."
     },
     {
       "slug": "royal-laravel",
@@ -17,26 +18,26 @@
       "branch": "main",
       "checked_sha": "5e43cbfa167bb9ed8d21b4feaf69858fc2227d0c",
       "license": "GPL-2.0",
-      "strategy": "feature-reference-not-merge",
-      "notes": "Laravel 13 frontend rewrite; adapt isolated features only after schema/security compatibility review."
+      "strategy": "pinned-separate-application",
+      "notes": "Laravel 13 frontend rewrite; unrelated history, imported as the separate `src/laravel` application with upstream provenance and deployed at the site root. Reviewed Laravel migrations own the official DB96-to-DB97 transition; do not invoke the upstream web installer or migrate an unreviewed schema. The independent Perl daemon, SourceMod integrations, DB96 seed, and Git history remain."
     },
     {
       "slug": "snipezilla-web",
       "repo": "SnipeZilla/hlstatsz-web",
       "branch": "main",
-      "checked_sha": "a63ed1a6bce4023f830485bacd37c4daa9571409",
+      "checked_sha": "c079510bc9c18ce67afe9a1ba67da1db50e702d9",
       "license": "Apache-2.0",
       "strategy": "design-reference-only",
-      "notes": "Separate HLstatsZ frontend/schema; do not copy code into this GPL-2-only repository without compatibility counsel."
+      "notes": "Separate HLstatsZ frontend/schema under Apache-2.0; reviewed through c079510. New commits are frontend/UI only and do not affect the Perl daemon; retain as design reference and review license compatibility before importing code/assets."
     },
     {
       "slug": "snipezilla-daemon",
       "repo": "SnipeZilla/HLSTATS-2",
       "branch": "main",
       "checked_sha": "db2a68620e6cf510c1c2ba40882896280a7b854b",
-      "license": "NOASSERTION",
+      "license": "GPL-2.0-or-later (README and core source headers; GitHub API metadata is NOASSERTION)",
       "strategy": "protocol-reference-only",
-      "notes": "Different daemon lineage; establish file-level license provenance and protocol parity before considering adaptation."
+      "notes": "Different daemon lineage. README and core Perl sources explicitly state GPL-2.0-or-later, compatible with this GPL-2.0 project when notices are preserved. GitHub has no repository license metadata; audit any bundled dependencies/assets separately. Require protocol/schema parity before broad adoption."
     },
     {
       "slug": "windmill-theme",
@@ -54,6 +55,7 @@
       "checked_sha": "8e7a7af4b36b1010b049134068e5966fae876809",
       "license": "GPL-2.0",
       "strategy": "selective-code-review",
+      "merge_base_sha": "a5028a78ea8cf11d18081213cfbe6fa18f8aec3c",
       "notes": "Related legacy code; DB97-99 broad schema changes are not approved for the DB96 curated line."
     },
     {
@@ -63,6 +65,7 @@
       "checked_sha": "5a8b3c0036f92d7de28d0f044624e08a49de724c",
       "license": "GPL-2.0",
       "strategy": "selective-code-review",
+      "merge_base_sha": "d3d21c177a2fe5303ce022ff00b81f565eadab85",
       "notes": "CS2-focused fork; inspect transport/plugin assumptions and preserve current daemon and game-specific gates."
     },
     {
@@ -72,6 +75,7 @@
       "checked_sha": "2a59071fce2b5eecbad43b769087f598e57c76a7",
       "license": "GPL-2.0",
       "strategy": "selective-code-review",
+      "merge_base_sha": "d3d21c177a2fe5303ce022ff00b81f565eadab85",
       "notes": "Related legacy fork; PDO/DI transition is not a drop-in backend migration."
     },
     {

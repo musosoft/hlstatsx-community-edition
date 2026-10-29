@@ -1,6 +1,5 @@
 <?php
-// Standalone: php8.5 test/test_php85_compatibility.php
-// Uses no configuration files, database, remote master server, or TCP/UDP port.
+// Standalone PHP 8.5 runtime compatibility fixtures.
 error_reporting(E_ALL);
 set_error_handler(function ($severity, $message, $file, $line) {
     throw new ErrorException($message, 0, $severity, $file, $line);
@@ -12,29 +11,6 @@ function check_compatibility($condition, $message)
         throw new RuntimeException($message);
     }
 }
-
-function hlxCsrfField()
-{
-    return '<input type="hidden" name="csrf_token" value="fixture-token" />';
-}
-
-define('IN_HLSTATS', true);
-define('IMAGE_PATH', '/test-only-images');
-$auth = (object) array('userdata' => array('acclevel' => 80));
-$task = (object) array('title' => 'Synchronization compatibility fixture');
-$_POST = array();
-$db = new class {
-    public function query($query)
-    {
-        throw new RuntimeException('Rendering the form must not access a database');
-    }
-};
-ob_start();
-require __DIR__ . '/../src/web/pages/admintasks/tools_synchronize.php';
-$html = ob_get_clean();
-check_compatibility(strpos($html, '<form method="POST">') !== false, 'Form did not render');
-check_compatibility(substr_count($html, '<OPTION VALUE=') === 2, 'Master-server choices changed');
-check_compatibility(strpos($html, 'name="confirm" value="1"') !== false, 'Confirmation field missing');
 
 // PHP's sockets API declares output parameters by reference. Call sites must
 // pass ordinary variables, not the call-time reference syntax removed in PHP 5.4.
@@ -70,7 +46,7 @@ for ($byte = 0; $byte < 256; ++$byte) {
 }
 check_compatibility(iconv('ISO-8859-1', 'UTF-8', $latin1) === $expected, 'Latin-1 conversion changed');
 check_compatibility(iconv('ISO-8859-1', 'UTF-8', '') === '', 'Empty topic conversion changed');
-$teamspeak = file_get_contents(__DIR__ . '/../src/web/pages/teamspeak_query.php');
-check_compatibility(strpos($teamspeak, "iconv('ISO-8859-1', 'UTF-8', removeChar(\$topic))") !== false, 'TeamSpeak must use the tested conversion');
+$heatmap = file_get_contents(__DIR__ . '/../src/heatmaps/heatmap.class.php');
+check_compatibility($heatmap !== false && preg_match('/\$\{[A-Za-z_][A-Za-z0-9_]*\}/', $heatmap) !== 1, 'Heatmap renderer must not use PHP 8.2+ deprecated interpolation syntax');
 restore_error_handler();
 echo "PHP compatibility fixtures passed\n";

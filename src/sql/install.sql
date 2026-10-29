@@ -4108,7 +4108,7 @@ INSERT INTO `hlstats_Options` (`keyname`, `value`, `opttype`) VALUES
 ('slider', '1',2),
 ('modrewrite','0',2),
 ('showqueries','0',2),
-('Proxy_Key', SUBSTRING(MD5(RAND()) FROM 1 FOR 24), 1),
+('Proxy_Key', SUBSTRING(SHA2(RAND(), 256) FROM 1 FOR 24), 1),
 ('Proxy_Daemons', '', 2),
 ('sourcebans_address', '', 2),
 ('forum_address', '', 2),

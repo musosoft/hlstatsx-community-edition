@@ -1,0 +1,14 @@
+FROM php:8.5.12-cli-alpine3.24
+
+RUN set -eux; \
+    apk add --no-cache freetype libjpeg-turbo libpng dcron; \
+    apk add --no-cache --virtual .build-dependencies freetype-dev libjpeg-turbo-dev libpng-dev $PHPIZE_DEPS linux-headers; \
+    docker-php-ext-configure gd --with-freetype --with-jpeg; \
+    docker-php-ext-install gd mysqli sockets; \
+    apk del .build-dependencies
+
+COPY ./src/heatmaps /heatmaps
+COPY ./src/laravel/public/hlstatsimg /web/hlstatsimg
+WORKDIR /heatmaps
+
+CMD ["/bin/sh", "-c", "crond -f & wait $!"]

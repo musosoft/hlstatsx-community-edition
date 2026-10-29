@@ -1,0 +1,58 @@
+name: Upstream watch
+
+on:
+  schedule:
+    - cron: '23 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check-upstreams:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check curated development pins
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: dev
+
+      - name: Compare pinned upstreams
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          bash scripts/check-upstreams.sh | tee "$RUNNER_TEMP/upstream-report.txt"
+          cat "$RUNNER_TEMP/upstream-report.txt" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Open one review issue when upstreams move
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          report="$RUNNER_TEMP/upstream-report.txt"
+          if ! grep -Eq '^[[:space:]]+[1-9][0-9]* new commit\(s\) since reviewed pin:' "$report"; then
+            exit 0
+          fi
+
+          existing="$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search 'in:title "Upstream review needed"' --json number --jq 'length')"
+          if [[ "$existing" != 0 ]]; then
+            echo 'An open upstream review issue already exists; see the workflow summary for this check.'
+            exit 0
+          fi
+
+          {
+            echo 'The scheduled upstream check found commits newer than the reviewed pins in docs/upstream-sources.json.'
+            echo
+            echo 'Review the listed ranges, record accept/defer decisions, then advance only the pins that were reviewed.'
+            echo
+            echo '```text'
+            cat "$report"
+            echo '```'
+          } > "$RUNNER_TEMP/upstream-issue.md"
+
+          gh issue create \
+            --repo "$GITHUB_REPOSITORY" \
+            --title 'Upstream review needed' \
+            --body-file "$RUNNER_TEMP/upstream-issue.md"

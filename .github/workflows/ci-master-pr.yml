@@ -20,14 +20,56 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Checkout
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7.0.1
+
+    - name: Build PHP heatmap runtime
+      if: matrix.testenv == 'dev'
+      run: |
+        set -eu
+        docker build -f Dockerfile.heatmaps -t hlstatsx-heatmaps-ci .
+        docker run --rm \
+          --mount type=bind,source="$PWD",target=/tmp/hlx-source,readonly \
+          --workdir /tmp/hlx-source \
+          hlstatsx-heatmaps-ci php test/test_php85_compatibility.php
+        network=hlx-laravel-ci
+        laravel_db=hlx-laravel-ci-db
+        cleanup() {
+          docker rm -f "$laravel_db" >/dev/null 2>&1 || true
+          docker network rm "$network" >/dev/null 2>&1 || true
+        }
+        trap cleanup EXIT
+        docker network create "$network" >/dev/null
+        docker build -t hlstatsx-laravel-ci src/laravel
+        docker run -d --name "$laravel_db" --network "$network" --network-alias laravel-db \
+          -e MARIADB_ALLOW_EMPTY_ROOT_PASSWORD=1 \
+          -e MARIADB_DATABASE=admin_accounts_test \
+          mariadb:10.11 >/dev/null
+        ready=0
+        for attempt in $(seq 1 90); do
+          if docker exec "$laravel_db" mariadb-admin ping -uroot --silent >/dev/null 2>&1; then
+            ready=1
+            break
+          fi
+          if [ "$attempt" -eq 90 ]; then
+            echo "MariaDB did not become ready after $attempt attempts" >&2
+          fi
+          sleep 2
+        done
+        test "$ready" = 1
+        docker run --rm --network "$network" \
+          -e APP_ENV=testing \
+          -e APP_KEY=base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= \
+          -e ADMIN_TEST_MYSQL_HOST=laravel-db \
+          -e ADMIN_TEST_MYSQL_ALLOW_RESET=1 \
+          --entrypoint sh \
+          hlstatsx-laravel-ci -ec 'php tests/admin_accounts.php && php tests/migration_preflight.php && php tests/view_rendering.php'
 
     # - name: Set up Docker Buildx
     #   id: buildx
     #   uses: docker/setup-buildx-action@v3
 
     - name: Cache Docker layers (daemon)
-      uses: actions/cache/restore@v4  # Don't save the cache at end of job
+      uses: actions/cache/restore@v6.1.0  # Don't save the cache at end of job
       with:
         path: /tmp/.buildx-cache-daemon
         key: ${{ runner.os }}-buildx-daemon-${{ github.sha }}
@@ -35,13 +77,13 @@ jobs:
           ${{ runner.os }}-buildx-daemon-
           ${{ runner.os }}-buildx-
 
-    - name: Cache Docker layers (web)
-      uses: actions/cache/restore@v4  # Don't save the cache at end of job
+    - name: Cache Docker layers (Laravel and heatmaps)
+      uses: actions/cache/restore@v6.1.0  # Don't save the cache at end of job
       with:
-        path: /tmp/.buildx-cache-web
-        key: ${{ runner.os }}-buildx-web-${{ github.sha }}
+        path: /tmp/.buildx-cache-laravel
+        key: ${{ runner.os }}-buildx-laravel-${{ github.sha }}
         restore-keys: |
-          ${{ runner.os }}-buildx-web-
+          ${{ runner.os }}-buildx-laravel-
           ${{ runner.os }}-buildx-
 
     - name: Print buildx and compose
@@ -54,7 +96,7 @@ jobs:
       if: matrix.testenv == 'dev'
       run: |
         set -eux
-        ./test/test.sh dev 1
+        HLX_TEST_MYSQL_IMAGE=mysql:26.10 ./test/test.sh dev 1
 
     - name: Integration test (prod)
       if: matrix.testenv == 'prod'
@@ -68,13 +110,26 @@ jobs:
       DOCKERHUB_REGISTRY_PASSWORD: ${{ secrets.DOCKERHUB_REGISTRY_PASSWORD }}
     strategy:
       matrix:
-        variant:
-          - daemon
-          - web
+        include:
+          - variant: daemon
+            context: .
+            dockerfile: Dockerfile.daemon
+            target: prod
+            platforms: linux/amd64
+          - variant: heatmaps
+            context: .
+            dockerfile: Dockerfile.heatmaps
+            target: ''
+            platforms: linux/amd64,linux/arm64
+          - variant: laravel
+            context: ./src/laravel
+            dockerfile: Dockerfile
+            target: ''
+            platforms: linux/amd64
     runs-on: ubuntu-latest
     steps:
     - name: Checkout
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7.0.1
 
     - name: Display system info (linux)
       run: |
@@ -91,14 +146,14 @@ jobs:
 
     # See: https://github.com/docker/build-push-action/blob/v2.6.1/docs/advanced/cache.md#github-cache
     - name: Set up QEMU
-      uses: docker/setup-qemu-action@v3
+      uses: docker/setup-qemu-action@v4.4.0
 
     - name: Set up Docker Buildx
       id: buildx
-      uses: docker/setup-buildx-action@v3
+      uses: docker/setup-buildx-action@v4.4.1
 
     - name: Cache Docker layers
-      uses: actions/cache@v4
+      uses: actions/cache@v6.1.0
       with:
         path: /tmp/.buildx-cache-${{ matrix.variant }}
         key: ${{ runner.os }}-buildx-${{ matrix.variant }}-${{ github.sha }}
@@ -109,7 +164,7 @@ jobs:
     # This step generates the docker tags
     - name: Docker meta
       id: meta
-      uses: docker/metadata-action@v5
+      uses: docker/metadata-action@v6.2.0
       with:
         images: |
           ${{ github.repository }}
@@ -134,7 +189,7 @@ jobs:
         (github.ref == 'refs/heads/dev' || startsWith(github.ref, 'refs/tags/')) &&
         env.DOCKERHUB_REGISTRY_USER != '' &&
         env.DOCKERHUB_REGISTRY_PASSWORD != ''
-      uses: docker/login-action@v3
+      uses: docker/login-action@v4.7.0
       with:
         username: ${{ secrets.DOCKERHUB_REGISTRY_USER }}
         password: ${{ secrets.DOCKERHUB_REGISTRY_PASSWORD }}
@@ -142,12 +197,12 @@ jobs:
     - name: Build (PRs)
       # Run on pull requests
       if: github.event_name == 'pull_request'
-      uses: docker/build-push-action@v5
+      uses: docker/build-push-action@v7.4.0
       with:
-        file: Dockerfile.${{ matrix.variant }}
-        context: '.'
-        target: prod
-        platforms: linux/amd64
+        file: ${{ matrix.dockerfile }}
+        context: ${{ matrix.context }}
+        target: ${{ matrix.target }}
+        platforms: ${{ matrix.platforms }}
         push: false
         tags: ${{ steps.meta.outputs.tags }}
         cache-from: type=local,src=/tmp/.buildx-cache-${{ matrix.variant }}
@@ -159,12 +214,12 @@ jobs:
         (github.ref == 'refs/heads/dev' || startsWith(github.ref, 'refs/tags/')) &&
         env.DOCKERHUB_REGISTRY_USER != '' &&
         env.DOCKERHUB_REGISTRY_PASSWORD != ''
-      uses: docker/build-push-action@v5
+      uses: docker/build-push-action@v7.4.0
       with:
-        file: Dockerfile.${{ matrix.variant }}
-        context: '.'
-        target: prod
-        platforms: ${{ matrix.variant == 'daemon' && 'linux/amd64' || 'linux/386,linux/amd64,linux/arm64' }}
+        file: ${{ matrix.dockerfile }}
+        context: ${{ matrix.context }}
+        target: ${{ matrix.target }}
+        platforms: ${{ matrix.platforms }}
         push: true
         tags: ${{ steps.meta.outputs.tags }}
         cache-from: type=local,src=/tmp/.buildx-cache-${{ matrix.variant }}
@@ -174,12 +229,12 @@ jobs:
       if: >-
         (github.ref == 'refs/heads/dev' || startsWith(github.ref, 'refs/tags/')) &&
         (env.DOCKERHUB_REGISTRY_USER == '' || env.DOCKERHUB_REGISTRY_PASSWORD == '')
-      uses: docker/build-push-action@v5
+      uses: docker/build-push-action@v7.4.0
       with:
-        file: Dockerfile.${{ matrix.variant }}
-        context: '.'
-        target: prod
-        platforms: ${{ matrix.variant == 'daemon' && 'linux/amd64' || 'linux/386,linux/amd64,linux/arm64' }}
+        file: ${{ matrix.dockerfile }}
+        context: ${{ matrix.context }}
+        target: ${{ matrix.target }}
+        platforms: ${{ matrix.platforms }}
         push: false
         tags: ${{ steps.meta.outputs.tags }}
         cache-from: type=local,src=/tmp/.buildx-cache-${{ matrix.variant }}
@@ -199,7 +254,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       # Drafts your next Release notes as Pull Requests are merged into "master"
-      - uses: release-drafter/release-drafter@v6
+      - uses: release-drafter/release-drafter@v7.10.0
         with:
           config-name: release-drafter.yml
           publish: false
@@ -212,7 +267,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       # Drafts your next Release notes as Pull Requests are merged into "master"
-      - uses: release-drafter/release-drafter@v6
+      - uses: release-drafter/release-drafter@v7.10.0
         with:
           config-name: release-drafter.yml
           publish: true
@@ -229,10 +284,10 @@ jobs:
       DOCKERHUB_REGISTRY_PASSWORD: ${{ secrets.DOCKERHUB_REGISTRY_PASSWORD }}
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7.0.1
     - name: Docker Hub Description
       if: env.DOCKERHUB_REGISTRY_USER != '' && env.DOCKERHUB_REGISTRY_PASSWORD != ''
-      uses: peter-evans/dockerhub-description@v4
+      uses: peter-evans/dockerhub-description@v5.0.0
       with:
         username: ${{ secrets.DOCKERHUB_REGISTRY_USER }}
         password: ${{ secrets.DOCKERHUB_REGISTRY_PASSWORD }}

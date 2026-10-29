@@ -1,5 +1,4 @@
 /.idea
-/src/web/.idea
 /.vscode/*
 !/.vscode/launch.json
 /.vagrant
@@ -8,8 +7,14 @@
 /src/amxmodx/scripting/amxxpc
 /src/amxmodx/scripting/amxxpc32.so
 
-/src/web/hlstatsimg/progress
-/src/web/hlstatsimg/graph
+# Laravel local-only state
+/src/laravel/.env
+/src/laravel/vendor/
+/src/laravel/bootstrap/cache/*.php
+/src/laravel/storage/logs/*.log
+/src/laravel/storage/framework/cache/data/
+/src/laravel/storage/framework/sessions/
+/src/laravel/storage/framework/views/
 
 # BEGIN oh-my-opencode-slim worktrees
 .slim/worktrees/

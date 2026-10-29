@@ -187,11 +187,9 @@ class HLXATBSimulationTests(unittest.TestCase):
     def test_human_swap_allowance_survives_daemon_reload(self):
         server = (ROOT / "src/scripts/HLstats_Server.pm").read_text()
         sql = (ROOT / "src/sql/install.sql").read_text()
-        updater = ROOT / "src/web/updater/95.php"
         self.assertIn("sub load_balance_swap_history", server)
         self.assertIn("sub persist_balance_player_swap", server)
         self.assertIn("hlstats_MapTeamBalanceSwaps", sql)
-        self.assertTrue(updater.is_file())
 
     def test_fill_count_correction_moves_bots_before_humans(self):
         players = [

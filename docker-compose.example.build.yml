@@ -20,22 +20,14 @@ services:
       # cache_to:
       #   - type=local,dest=/tmp/.buildx-cache-daemon,mode=max
 
-  web:
+  laravel:
     build:
-      dockerfile: Dockerfile.web
-      context: .
-      target: prod
-      cache_from:
-        - type=local,src=/tmp/.buildx-cache-web
-      # cache_to:
-      #   - type=local,dest=/tmp/.buildx-cache-web,mode=max
+      context: ./src/laravel
+      dockerfile: Dockerfile
 
   heatmaps:
     build:
-      dockerfile: Dockerfile.web
+      dockerfile: Dockerfile.heatmaps
       context: .
-      target: prod
       cache_from:
-        - type=local,src=/tmp/.buildx-cache-web
-      # cache_to:
-      #   - type=local,dest=/tmp/.buildx-cache-web,mode=max
+        - type=local,src=/tmp/.buildx-cache-heatmaps

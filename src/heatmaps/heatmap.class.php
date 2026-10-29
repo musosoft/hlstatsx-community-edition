@@ -181,7 +181,7 @@ class Heatmap {
 			if (is_dir(CACHE_DIR . "/$code")) {
 			if ($handle = opendir(CACHE_DIR. "/$code")) {
 				while (false !== ($file = readdir($handle))) {
-					if ($file != "." && $file != ".." && preg_match(str_replace("\$","\\\$","/${map}_(\d+).png/i"), $file, $matches)) {
+					if ($file != "." && $file != ".." && preg_match(str_replace("\$","\\\$","/{$map}_(\d+).png/i"), $file, $matches)) {
 					$cache_file = CACHE_DIR . "/$code/$file";
 					$oldtimestamp = $matches[1];
 
@@ -327,12 +327,12 @@ class Heatmap {
 			$img = self::drawHud($img, $map,  "HLX:CE", "Total Kills", $num_kills, $firstdata);
 						
 			if (imagejpeg($img, $path . "/" . $map . "-" . $mode . ".jpg", 100)) $return = true;
-			if (imagepng($overlay, CACHE_DIR . "/$code/${map}_${timestamp}.png", 9)) $return = true;
+			if (imagepng($overlay, CACHE_DIR . "/$code/{$map}_{$timestamp}.png", 9)) $return = true;
 			imagedestroy($overlay);
 
 			// Clean upc cache file
 			if (isset($cache_file) && file_exists($cache_file)) {
-				unlink(CACHE_DIR . "/$code/${map}_${oldtimestamp}.png");
+				unlink(CACHE_DIR . "/$code/{$map}_{$oldtimestamp}.png");
 			}
 			
 			

@@ -1,0 +1,81 @@
+{
+  "meta": {
+    "slug": "midnight-blue",
+    "name": "Midnight Blue",
+    "description": "Palette très sombre bleutée avec accents violet/cyan",
+    "author": "HLStatsX Team",
+    "version": "1.0.0",
+    "preview": "preview.png"
+  },
+  "colors": {
+    "bg-body":            "#060b18",
+    "bg-header":          "#040810",
+    "bg-surface":         "#0c1428",
+    "bg-surface-alt":     "#0e1830",
+    "bg-row-even":        "#0a1020",
+    "bg-row-odd":         "#0d1526",
+    "bg-nav-tab":         "#121e38",
+    "bg-nav-tab-active":  "#7c3aed",
+    "border":             "#1e3a5f",
+    "text-primary":       "#b8c8e8",
+    "text-secondary":     "#7090b0",
+    "text-heading":       "#d4e8ff",
+    "link":               "#06b6d4",
+    "link-hover":         "#38d0f0",
+    "accent-primary":     "#7c3aed",
+    "accent-secondary":   "#06b6d4",
+    "btn-gold-bg":        "#7c3aed",
+    "btn-gold-text":      "#ffffff",
+    "btn-green-bg":       "#0891b2",
+    "btn-green-text":     "#ffffff",
+    "activity-high":      "#06b6d4",
+    "activity-mid":       "#7c3aed",
+    "activity-low":       "#4f46e5",
+    "status-online":      "#06b6d4",
+    "status-offline":     "#f85149",
+    "chart-line":         "#06b6d4",
+    "chart-grid":         "#1e3a5f",
+    "chart-bg":           "#060b18",
+    "map-marker":         "#06b6d4"
+  },
+  "typography": {
+    "font-family-base":   "'Inter', 'Segoe UI', sans-serif",
+    "font-family-mono":   "'JetBrains Mono', 'Fira Code', monospace",
+    "font-size-base":     "13px",
+    "font-size-sm":       "11px",
+    "font-size-lg":       "15px",
+    "font-weight-normal": "400",
+    "font-weight-bold":   "600",
+    "line-height":        "1.5"
+  },
+  "layout": {
+    "header-height":      "60px",
+    "border-radius-sm":   "4px",
+    "border-radius-md":   "8px",
+    "border-radius-pill": "999px",
+    "row-height":         "28px",
+    "table-padding-x":    "8px",
+    "table-padding-y":    "4px",
+    "container-max-width":"1400px",
+    "sidebar-width":      "220px"
+  },
+  "logo": {
+    "text":      "HLSTATSX: CE",
+    "color":     "#06b6d4",
+    "icon-bg":   "#7c3aed",
+    "show-icon": true
+  },
+  "header": {
+    "show-social-icons": true,
+    "nav-buttons": [
+      { "label": "Contents", "url": "/",       "color": "#7c3aed", "text-color": "#fff" },
+      { "label": "Search",   "url": "/search", "color": "#0891b2", "text-color": "#fff" },
+      { "label": "Forums",   "url": "#",       "color": "#7c3aed", "text-color": "#fff" },
+      { "label": "Help",     "url": "/help",    "color": "#7c3aed", "text-color": "#fff" }
+    ]
+  },
+  "charts": {
+    "style":     "dark",
+    "map-tiles": "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+  }
+}

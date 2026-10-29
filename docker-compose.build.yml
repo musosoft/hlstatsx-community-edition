@@ -14,16 +14,8 @@ services:
       # cache_to:
       #   - type=local,dest=/tmp/.buildx-cache-daemon,mode=max
 
-  web:
-    build:
-      cache_from:
-        - type=local,src=/tmp/.buildx-cache-web
-      # cache_to:
-      #   - type=local,dest=/tmp/.buildx-cache-web,mode=max
-
   heatmaps:
     build:
+      dockerfile: Dockerfile.heatmaps
       cache_from:
-        - type=local,src=/tmp/.buildx-cache-web
-      # cache_to:
-      #   - type=local,dest=/tmp/.buildx-cache-web,mode=max
+        - type=local,src=/tmp/.buildx-cache-heatmaps
