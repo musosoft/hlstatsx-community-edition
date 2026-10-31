@@ -57,12 +57,14 @@ jobs:
           mariadb:10.11 >/dev/null
         ready=0
         for attempt in $(seq 1 90); do
-          if docker exec "$laravel_db" mariadb-admin ping -uroot --silent >/dev/null 2>&1; then
+          if docker run --rm --network "$network" --entrypoint php hlstatsx-laravel-ci \
+            -r '$socket = @fsockopen("laravel-db", 3306); if (! $socket) { exit(1); } fclose($socket);' \
+            >/dev/null 2>&1; then
             ready=1
             break
           fi
           if [ "$attempt" -eq 90 ]; then
-            echo "MariaDB did not become ready after $attempt attempts" >&2
+            echo "MariaDB TCP endpoint did not become ready after $attempt attempts" >&2
           fi
           sleep 2
         done
