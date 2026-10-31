@@ -1040,7 +1040,7 @@ sub run_pending_team_balance
 	}
 
 	$self->{ba_balance_pending} = 0;
-	$self->analyze_teams(1, 1);
+	$self->analyze_teams(1, 1, 1);
 }
 
 sub bot_fill_roster_is_changing
@@ -1129,6 +1129,32 @@ sub confirm_balance_player_swap
 	$self->persist_balance_player_swap($player) if !$player->{is_bot};
 	$self->{ba_last_swap} = $self->{balance_rounds_delay}
 		if $pending->{counts_as_skill_balance};
+	return 1;
+}
+
+sub request_balance_player_pair
+{
+	my ($self, $first, $second, $allow_alive) = @_;
+	return 0 if !$allow_alive || $first->[3] eq $second->[3];
+	my ($first_key, $second_key) = map { $self->balance_player_key($_) } ($first, $second);
+	return 0 if $first_key eq $second_key
+		|| $self->balance_player_was_swapped($first)
+		|| $self->balance_player_was_swapped($second)
+		|| exists $self->{ba_pending_swaps}{$first_key}
+		|| exists $self->{ba_pending_swaps}{$second_key};
+	return 0 if !$self->switch_players_round_end($first->[8], $second->[8]);
+
+	my $expires = time() + 15;
+	$self->{ba_pending_swaps}{$first_key} = {
+		team => $first->[3] eq "CT" ? "TERRORIST" : "CT",
+		expires => $expires,
+		counts_as_skill_balance => 1,
+	};
+	$self->{ba_pending_swaps}{$second_key} = {
+		team => $second->[3] eq "CT" ? "TERRORIST" : "CT",
+		expires => $expires,
+		counts_as_skill_balance => 1,
+	};
 	return 1;
 }
 
@@ -1361,6 +1387,18 @@ sub switch_player
 	return 1;
 }
 
+sub switch_players_round_end
+{
+	my ($self, $first_userid, $second_userid) = @_;
+	return 0 if !$self->{swap_command} || $self->{swap_command} ne "hlx_sm_swap";
+	my $command = sprintf(
+		'%s %s %s round_end_pair',
+		$self->{swap_command}, $self->format_userid($first_userid),
+		$self->format_userid($second_userid),
+	);
+	return defined($self->dorcon($command)) ? 1 : 0;
+}
+
 sub update_player_kd_cache
 {
 	my ($self, $player) = @_;
@@ -1518,7 +1556,7 @@ sub debug_message
 
 sub analyze_teams
 {
-	my ($self, $allow_alive, $use_live_team_counts) = @_;
+	my ($self, $allow_alive, $use_live_team_counts, $atomic_round_end) = @_;
 
 	if ($::g_stdin != 0 || $self->{ba_enabled} == 0) {
 		return;
@@ -1614,19 +1652,14 @@ sub analyze_teams
 
 	my $action_done = 0;
 	# At or below the configured population threshold only correct team counts;
-	# do not use round score to choose the players being moved.
-	# Round-end swaps are dispatched individually and can be partially refused
-	# when the SourceMod prestart window closes. Keep this path count-only so a
-	# failed half of a score pair cannot create a team-count imbalance.
+	# round-end score pairs are dispatched as one SourceMod transaction.
 	my $balance_population = $use_live_team_counts
 		? $ct_count + $ts_count
 		: ($self->{numplayers} || $self->{num_trackable_players} || 0);
 	my $balance_min_players = defined($self->{balance_min_players})
 		? $self->{balance_min_players} : 10;
-	my $can_balance_by_score = !$allow_alive
+	my $can_balance_by_score = (!$allow_alive || $atomic_round_end)
 		&& $balance_population > $balance_min_players;
-	# At round end, allow score history to choose the one transfer needed to
-	# repair a count gap, but never run a separate paired score swap afterward.
 	my $score_aware_count_correction = $balance_population > $balance_min_players;
 	my ($ct_excess, $ts_excess, $has_map_bias) = (0, 0, 0);
 	if ($can_balance_by_score) {
@@ -1740,6 +1773,11 @@ sub analyze_teams
 		@ct_players = sort { $b->[6] <=> $a->[6]} @ct_players;  # best player
 		shift(@ct_players); # remove first best
 	}
+	if ($atomic_round_end && ($ct_underperforming || $ts_underperforming)) {
+		# Score balance is a paired exchange even if team sizes differ by one;
+		# count corrections above remain their own validated single-player path.
+		($need_ct, $need_ts) = (1, 1);
+	}
 
 	my @ct_switch_player = ();
 	my @ts_switch_player = ();
@@ -1771,8 +1809,16 @@ sub analyze_teams
 	}
 
 	if ($need_ct && @ct_switch_player && $need_ts && @ts_switch_player) {
-		my $ct_requested = $self->request_balance_player_swap(\@ct_switch_player, 1, $allow_alive);
-		my $ts_requested = $self->request_balance_player_swap(\@ts_switch_player, 1, $allow_alive);
+		my ($ct_requested, $ts_requested);
+		if ($atomic_round_end) {
+			$ct_requested = $self->request_balance_player_pair(
+				\@ct_switch_player, \@ts_switch_player, $allow_alive,
+			);
+			$ts_requested = $ct_requested;
+		} else {
+			$ct_requested = $self->request_balance_player_swap(\@ct_switch_player, 1, $allow_alive);
+			$ts_requested = $self->request_balance_player_swap(\@ts_switch_player, 1, $allow_alive);
+		}
 		if ($ct_requested && $ts_requested) {
 			$self->messageAll("HLstatsX:CE - ATB - [CT] " . $ct_switch_player[0] . " ⇄ [T] " . $ts_switch_player[0] . " switched to reduce the team score lead.", 0, 1);
 		} elsif ($ct_requested) {
@@ -1781,6 +1827,9 @@ sub analyze_teams
 			$self->messageAll("HLstatsX:CE - ATB - " . $ts_switch_player[0] . " switched [T → CT] to reduce the team score lead.", 0, 1);
 		}
 		return if !$ct_requested && !$ts_requested;
+	} elsif ($atomic_round_end) {
+		# Round-end score balancing never falls back to an unpaired transfer.
+		return;
 	} elsif ($need_ct && @ct_switch_player && !$need_ts) {
 		return if !$self->request_balance_player_swap(\@ct_switch_player, 1, $allow_alive);
 		$self->messageAll("HLstatsX:CE - ATB - " . $ct_switch_player[0] . " switched [CT → T] to reduce the team score lead.", 0, 1);

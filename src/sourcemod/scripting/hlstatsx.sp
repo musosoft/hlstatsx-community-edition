@@ -129,6 +129,8 @@ new bool:g_bRoundActive = true;
 new bool:g_bAtbSwapWindow;
 new bool:g_bAtbRosterChangedAfterRoundEnd;
 new g_iQueuedAtbSwapSerial[MAXPLAYERS+1];
+new g_iQueuedAtbPairSerialA;
+new g_iQueuedAtbPairSerialB;
 new g_iAtbExpectedTeamSerial[MAXPLAYERS+1];
 new g_iAtbExpectedTeam[MAXPLAYERS+1];
 new Handle:g_hAtbSwapTimer = INVALID_HANDLE;
@@ -347,6 +349,8 @@ public OnMapEnd()
 	g_hAtbSwapTimer = INVALID_HANDLE;
 	for (new i = 1; i <= MaxClients; i++)
 		g_iQueuedAtbSwapSerial[i] = 0;
+	g_iQueuedAtbPairSerialA = 0;
+	g_iQueuedAtbPairSerialB = 0;
 }
 
 bool:BTagsSupported()
@@ -1895,6 +1899,8 @@ public Action:HLX_ATB_TeamCounts(args)
 	{
 		for (new i = 1; i <= MaxClients; i++)
 			g_iQueuedAtbSwapSerial[i] = 0;
+		g_iQueuedAtbPairSerialA = 0;
+		g_iQueuedAtbPairSerialB = 0;
 		g_bAtbRosterChangedAfterRoundEnd = false;
 	}
 
@@ -1910,6 +1916,8 @@ stock void HLX_ATB_InvalidateQueuedSwaps(const char[] reason)
 	g_bAtbRosterChangedAfterRoundEnd = true;
 	for (new client = 1; client <= MaxClients; client++)
 		g_iQueuedAtbSwapSerial[client] = 0;
+	g_iQueuedAtbPairSerialA = 0;
+	g_iQueuedAtbPairSerialB = 0;
 	if (g_hAtbAudit != INVALID_HANDLE && GetConVarBool(g_hAtbAudit))
 		LogToGame("[HLX-ATB-AUDIT] discarded queued swaps reason=%s", reason);
 }
@@ -1951,6 +1959,31 @@ stock void HLX_ATB_ApplyCountCorrection(client)
 	}
 }
 
+stock bool:HLX_ATB_ApplyScorePair(first_client, second_client)
+{
+	if (first_client <= 0 || second_client <= 0 || first_client == second_client
+		|| !IsClientInGame(first_client) || !IsClientInGame(second_client))
+		return false;
+
+	new first_team = GetClientTeam(first_client);
+	new second_team = GetClientTeam(second_client);
+	if ((first_team != CS_TEAM_CT && first_team != CS_TEAM_T)
+		|| (second_team != CS_TEAM_CT && second_team != CS_TEAM_T)
+		|| first_team == second_team)
+		return false;
+
+	// Mark both expected team events before switching either player so the first
+	// half cannot invalidate the second half as external roster churn.
+	g_iAtbExpectedTeamSerial[first_client] = GetClientSerial(first_client);
+	g_iAtbExpectedTeam[first_client] = second_team;
+	g_iAtbExpectedTeamSerial[second_client] = GetClientSerial(second_client);
+	g_iAtbExpectedTeam[second_client] = first_team;
+	swap_player_internal(first_client, true, true);
+	swap_player_internal(second_client, true, true);
+	return GetClientTeam(first_client) == second_team
+		&& GetClientTeam(second_client) == first_team;
+}
+
 public Action:hlx_sm_swap(args)
 {
 	if (args < 1)
@@ -1963,6 +1996,50 @@ public Action:hlx_sm_swap(args)
 	{
 		PrintToServer("hlx_sm_swap is not supported by this game.");
 		return Plugin_Handled;
+	}
+
+	if (args >= 3)
+	{
+		decl String:first_id[32], String:second_id[32], String:swap_mode[32];
+		GetCmdArg(1, first_id, sizeof(first_id));
+		GetCmdArg(2, second_id, sizeof(second_id));
+		GetCmdArg(3, swap_mode, sizeof(swap_mode));
+		if (StrEqual(swap_mode, "round_end_pair", false))
+		{
+			new first_userid = StringToInt(first_id);
+			new second_userid = StringToInt(second_id);
+			new first_client = GetClientOfUserId(first_userid);
+			new second_client = GetClientOfUserId(second_userid);
+			if (first_client <= 0 || second_client <= 0 || first_client == second_client
+				|| (GetClientTeam(first_client) != CS_TEAM_CT && GetClientTeam(first_client) != CS_TEAM_T)
+				|| (GetClientTeam(second_client) != CS_TEAM_CT && GetClientTeam(second_client) != CS_TEAM_T)
+				|| GetClientTeam(first_client) == GetClientTeam(second_client))
+			{
+				if (g_hAtbAudit != INVALID_HANDLE && GetConVarBool(g_hAtbAudit))
+					LogToGame("[HLX-ATB-AUDIT] refused score pair userid_a=%d userid_b=%d reason=invalid_pair", first_userid, second_userid);
+				return Plugin_Handled;
+			}
+			if (g_bRoundActive || g_bAtbRosterChangedAfterRoundEnd)
+			{
+				if (g_hAtbAudit != INVALID_HANDLE && GetConVarBool(g_hAtbAudit))
+					LogToGame("[HLX-ATB-AUDIT] refused score pair userid_a=%d userid_b=%d reason=stale_round_snapshot", first_userid, second_userid);
+				return Plugin_Handled;
+			}
+			if (g_bAtbSwapWindow)
+			{
+				if (!HLX_ATB_ApplyScorePair(first_client, second_client)
+					&& g_hAtbAudit != INVALID_HANDLE && GetConVarBool(g_hAtbAudit))
+					LogToGame("[HLX-ATB-AUDIT] refused score pair userid_a=%d userid_b=%d reason=apply_failed", first_userid, second_userid);
+			}
+			else if (g_iQueuedAtbPairSerialA == 0 && g_iQueuedAtbPairSerialB == 0)
+			{
+				g_iQueuedAtbPairSerialA = GetClientSerial(first_client);
+				g_iQueuedAtbPairSerialB = GetClientSerial(second_client);
+				if (g_hAtbAudit != INVALID_HANDLE && GetConVarBool(g_hAtbAudit))
+					LogToGame("[HLX-ATB-AUDIT] queued score pair userid_a=%d userid_b=%d reason=await_restart_window", first_userid, second_userid);
+			}
+			return Plugin_Handled;
+		}
 	}
 	
 	decl String:client_id[32];
@@ -2023,6 +2100,8 @@ public Action:HLstatsX_Event_RoundStart(Handle:event, const String:name[], bool:
 		g_iAtbExpectedTeamSerial[i] = 0;
 		g_iAtbExpectedTeam[i] = 0;
 	}
+	g_iQueuedAtbPairSerialA = 0;
+	g_iQueuedAtbPairSerialB = 0;
 	return Plugin_Continue;
 }
 
@@ -2073,8 +2152,26 @@ public Action:Timer_HLX_ATBSwapWindow(Handle:timer)
 	{
 		for (new i = 1; i <= MaxClients; i++)
 			g_iQueuedAtbSwapSerial[i] = 0;
+		g_iQueuedAtbPairSerialA = 0;
+		g_iQueuedAtbPairSerialB = 0;
 		if (g_hAtbAudit != INVALID_HANDLE && GetConVarBool(g_hAtbAudit))
 			LogToGame("[HLX-ATB-AUDIT] skipped queued swaps reason=roster_changed");
+		return Plugin_Stop;
+	}
+	if (g_iQueuedAtbPairSerialA != 0 || g_iQueuedAtbPairSerialB != 0)
+	{
+		new first_client = GetClientFromSerial(g_iQueuedAtbPairSerialA);
+		new second_client = GetClientFromSerial(g_iQueuedAtbPairSerialB);
+		g_iQueuedAtbPairSerialA = 0;
+		g_iQueuedAtbPairSerialB = 0;
+		if (first_client > 0 && second_client > 0
+			&& HLX_ATB_ApplyScorePair(first_client, second_client))
+		{
+			for (new i = 1; i <= MaxClients; i++)
+				g_iQueuedAtbSwapSerial[i] = 0;
+		}
+		else if (g_hAtbAudit != INVALID_HANDLE && GetConVarBool(g_hAtbAudit))
+			LogToGame("[HLX-ATB-AUDIT] refused queued score pair reason=stale_or_apply_failed");
 		return Plugin_Stop;
 	}
 	for (new i = 1; i <= MaxClients; i++)

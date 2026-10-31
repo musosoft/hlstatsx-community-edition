@@ -543,6 +543,10 @@ is($fallback_server->{ba_balance_deadline}, 2004,
 	$swap_server->switch_player(42, "dead candidate", 0);
 	unlike($commands[1], qr/round_end/,
 		"ordinary swap requests retain the dead-only plugin behavior");
+	ok($swap_server->switch_players_round_end(42, 43),
+		"paired score swap uses the dedicated SourceMod transaction command");
+	like($commands[2], qr/^hlx_sm_swap\s+"42"\s+"43"\s+round_end_pair$/,
+		"paired transaction preserves quoted userids and the round-end mode");
 }
 
 {
@@ -551,16 +555,16 @@ is($fallback_server->{ba_balance_deadline}, 2004,
 	$round_end_server->{ba_balance_due} = 2000;
 	my @analysis_modes;
 	no warnings qw(redefine once);
-	local *HLstats_Server::analyze_teams = sub { push @analysis_modes, $_[1] };
+	local *HLstats_Server::analyze_teams = sub { push @analysis_modes, [@_[1..3]] };
 	local *HLstats_Server::bot_fill_roster_is_changing = sub { 0 };
 	$round_end_server->run_pending_team_balance(2000);
-	is_deeply(\@analysis_modes, [1],
-		"a scheduled round-end analysis explicitly enables the alive-safe candidate path");
+	is_deeply(\@analysis_modes, [[1, 1, 1]],
+		"a scheduled round-end analysis enables live-count and atomic score-pair paths");
 	$round_end_server->{ba_balance_pending} = 1;
 	$round_end_server->{ba_balance_due} = 2001;
 	$round_end_server->{ba_round_active} = 1;
 	$round_end_server->run_pending_team_balance(2001);
-	is_deeply(\@analysis_modes, [1],
+	is_deeply(\@analysis_modes, [[1, 1, 1]],
 		"the alive-capable path is never analyzed after round start");
 }
 
@@ -1168,6 +1172,44 @@ $server->{srv_players} = \%balanced_roster;
 $server->analyze_teams(1);
 is(scalar @{$server->{test_switches} || []}, 0,
 	"round-end analysis does not make score-based paired swaps that can leave a count gap");
+
+$server = new_server();
+$server->{map_rounds} = 12;
+$server->{num_trackable_players} = 10;
+$server->{numplayers} = 11;
+$server->{balance_min_players} = 10;
+$server->{minplayers} = 8;
+$server->{balance_analyze_rounds} = 7;
+$server->{balance_start_rounds} = 7;
+$server->{balance_max_wins} = 3;
+$server->{balance_ignore_bots} = 0;
+$server->{switch_admins} = 0;
+$server->{balance_switch_only_dead} = 0;
+$server->{ba_ct_wins} = 0;
+$server->{ba_ts_wins} = 7;
+$server->{swap_command} = "hlx_sm_swap";
+%balanced_roster = ();
+for my $index (1 .. 3) {
+	$balanced_roster{"t$index"} = balance_player($index, "TERRORIST", 0, 24 - ($index * 4));
+	$balanced_roster{"ct$index"} = balance_player($index + 3, "CT", 0, ($index - 1) * 4);
+}
+$server->{srv_players} = \%balanced_roster;
+my @pair_request;
+{
+	no warnings qw(redefine once);
+	local *HLstats_Server::switch_players_round_end = sub {
+		my ($self, $first_userid, $second_userid) = @_;
+		@pair_request = ($first_userid, $second_userid);
+		return 1;
+	};
+	$server->analyze_teams(1, 0, 1);
+}
+is_deeply(\@pair_request, [4, 2],
+	"round-end score imbalance is sent as one paired SourceMod request");
+is(scalar @{$server->{test_switches} || []}, 0,
+	"atomic score-pair planning does not optimistically mutate the Perl roster");
+is(scalar keys %{$server->{ba_pending_swaps}}, 2,
+	"both score-pair members are tracked as pending together");
 
 $server = new_server();
 $server->{num_trackable_players} = 10;
