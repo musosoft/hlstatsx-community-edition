@@ -40,7 +40,18 @@ jobs:
         trap cleanup EXIT
         docker network create "$network" >/dev/null
         docker build -t hlstatsx-laravel-ci src/laravel
+        for attempt in 1 2 3 4 5; do
+          if docker pull mariadb:10.11; then
+            break
+          fi
+          if [ "$attempt" -eq 5 ]; then
+            echo "Unable to pull mariadb:10.11 after $attempt attempts" >&2
+            exit 1
+          fi
+          sleep "$((attempt * 5))"
+        done
         docker run -d --name "$laravel_db" --network "$network" --network-alias laravel-db \
+          --pull=never \
           -e MARIADB_ALLOW_EMPTY_ROOT_PASSWORD=1 \
           -e MARIADB_DATABASE=admin_accounts_test \
           mariadb:10.11 >/dev/null
@@ -138,7 +149,7 @@ jobs:
             platforms: linux/amd64,linux/arm64
           - variant: laravel
             context: ./src/laravel
-            dockerfile: Dockerfile
+            dockerfile: src/laravel/Dockerfile
             target: ''
             platforms: linux/amd64
     runs-on: ubuntu-latest
