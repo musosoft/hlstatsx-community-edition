@@ -87,7 +87,10 @@ sub main::quoteSQL {
 
 {
 	no warnings qw(redefine once);
-	*HLstats_Server::messageAll = sub { };
+	*HLstats_Server::messageAll = sub {
+		my ($self, $message) = @_;
+		push @{$self->{test_announcements}}, $message;
+	};
 	*HLstats_Server::is_admin = sub { return 0 };
 	*HLstats_Server::get_map_team_bias = sub {
 		return { active => 0, ct_rate => 0.5, ts_rate => 0.5, rounds => 0 };
@@ -121,6 +124,9 @@ sub new_server {
 		rcon_obj => bless({}, "TestRcon"),
 		minplayers => 4,
 		num_trackable_players => 0,
+		numplayers => 0,
+		balance_min_players => 10,
+		balance_max_wins => 3,
 		maxplayers => 32,
 		srv_players => {},
 		ba_swapped_players => {},
@@ -162,6 +168,7 @@ is_deeply(
 		BalanceRoundsDelay => "",
 		BalanceAnalyzeRounds => undef,
 		BalanceMaxWins => "",
+		BalanceMinPlayers => "",
 		BalanceIgnoreBots => "",
 	}),
 	{
@@ -169,7 +176,8 @@ is_deeply(
 		BalanceStartRounds => "3",
 		BalanceRoundsDelay => 3,
 		BalanceAnalyzeRounds => 7,
-		BalanceMaxWins => 1,
+		BalanceMaxWins => 3,
+		BalanceMinPlayers => 10,
 		BalanceIgnoreBots => 0,
 	},
 	"empty DB balance settings inherit documented defaults while configured values remain intact",
@@ -180,6 +188,7 @@ my $explicit_balance = {
 	BalanceRoundsDelay => "0",
 	BalanceAnalyzeRounds => "2",
 	BalanceMaxWins => "0",
+	BalanceMinPlayers => "0",
 	BalanceIgnoreBots => "1",
 };
 $server->apply_team_balance_config_defaults($explicit_balance);
@@ -189,6 +198,7 @@ is_deeply($explicit_balance, {
 	BalanceRoundsDelay => "0",
 	BalanceAnalyzeRounds => "2",
 	BalanceMaxWins => "0",
+	BalanceMinPlayers => "0",
 	BalanceIgnoreBots => "1",
 }, "explicit zero and bot-ignore settings are preserved");
 is($server->apply_team_balance_config_defaults({ BalanceAnalyzeRounds => "0" })->{BalanceAnalyzeRounds}, 7,
@@ -253,8 +263,8 @@ is($server->apply_team_balance_config_defaults({ BalanceAnalyzeRounds => "0" })-
 		10 => { uniqueid => "STEAM_0:0:2", userid => 10, is_bot => 0, team => "CT" },
 	};
 	my $policy = $server->get_join_team_policy($joiner);
-	is_deeply($policy, { preferred_team => 2, kd_locked => 1 },
-		"backend prefers the smaller team for a qualifying player, excluding that player from counts");
+	is_deeply($policy, { preferred_team => 3, kd_locked => 1 },
+		"a qualified player is directed to the losing side when the score lead exceeds the ATB limit");
 	$joiner->{total_kills} = 20;
 	$joiner->{lifetime_deaths} = 20;
 	$joiner->{team} = "Unassigned";
@@ -308,6 +318,53 @@ is($server->apply_team_balance_config_defaults({ BalanceAnalyzeRounds => "0" })-
 	$server->reset_team_balance();
 	is_deeply($server->{jtc_join_reservations}, {},
 		"map balance reset clears pending join reservations");
+}
+{
+	no warnings qw(redefine once);
+	local *HLstats_Server::dorcon = sub {
+		return '"jtc_enabled" = "1"' if $_[1] eq "jtc_enabled";
+		return '"jtc_kd_threshold" = "2.0"' if $_[1] eq "jtc_kd_threshold";
+		return '"bot_quota_mode" = "fill"' if $_[1] eq "bot_quota_mode";
+		return "";
+	};
+	$server->{play_game} = 0;
+	$server->{jtc_enabled_checked_at} = 0;
+	$server->{jtc_threshold_checked_at} = 0;
+	$server->{map_ct_wins} = 0;
+	$server->{map_ts_wins} = 0;
+	$server->{srv_players} = {
+		1 => { uniqueid => "BOT", userid => 1, is_bot => 1, team => "CT" },
+		2 => { uniqueid => "STEAM_0:0:2", userid => 2, is_bot => 0, team => "CT" },
+		3 => { uniqueid => "STEAM_0:1:3", userid => 3, is_bot => 0, team => "TERRORIST" },
+		4 => { uniqueid => "STEAM_0:1:4", userid => 4, is_bot => 0, team => "Unassigned" },
+	};
+	my $policy = $server->get_join_team_policy($server->{srv_players}{4});
+	is($policy->{preferred_team}, 3,
+		"when human counts are even in fill mode, placement prefers the side whose bot can vacate");
+}
+{
+	no warnings qw(redefine once);
+	local *HLstats_Server::dorcon = sub {
+		return '"jtc_enabled" = "1"' if $_[1] eq "jtc_enabled";
+		return '"jtc_kd_threshold" = "2.0"' if $_[1] eq "jtc_kd_threshold";
+		return '"bot_quota_mode" = "normal"' if $_[1] eq "bot_quota_mode";
+		return "";
+	};
+	$server->{play_game} = 0;
+	$server->{jtc_enabled_checked_at} = 0;
+	$server->{jtc_threshold_checked_at} = 0;
+	$server->{map_ct_wins} = 4;
+	$server->{map_ts_wins} = 8;
+	$server->{srv_players} = {
+		1 => { uniqueid => "STEAM_0:0:1", userid => 1, is_bot => 0, team => "CT" },
+		2 => { uniqueid => "STEAM_0:1:2", userid => 2, is_bot => 0, team => "CT" },
+		3 => { uniqueid => "STEAM_0:0:3", userid => 3, is_bot => 0, team => "CT" },
+		4 => { uniqueid => "STEAM_0:1:4", userid => 4, is_bot => 0, team => "TERRORIST" },
+		5 => { uniqueid => "STEAM_0:0:5", userid => 5, is_bot => 0, team => "Unassigned", total_kills => 40, lifetime_deaths => 10 },
+	};
+	my $policy = $server->get_join_team_policy($server->{srv_players}{5});
+	is_deeply($policy, { preferred_team => 3, kd_locked => 1 },
+		"a high-KD player is kept off the winning side even when it has more open human slots");
 }
 {
 	no warnings qw(redefine once);
@@ -830,7 +887,7 @@ $server->{minplayers} = 6;
 $server->{balance_analyze_rounds} = 7;
 $server->{balance_start_rounds} = 7;
 $server->{balance_rounds_delay} = 3;
-$server->{balance_max_wins} = 1;
+$server->{balance_max_wins} = 3;
 $server->{balance_ignore_bots} = 0;
 $server->{switch_admins} = 0;
 $server->{balance_switch_only_dead} = 0;
@@ -1000,11 +1057,13 @@ is(scalar(grep { $_->{team} eq "TERRORIST" } values %{$server->{srv_players}}), 
 $server = new_server();
 $server->{map_rounds} = 12;
 $server->{num_trackable_players} = 6;
+$server->{numplayers} = 6;
+$server->{balance_min_players} = 6;
 $server->{minplayers} = 6;
 $server->{balance_analyze_rounds} = 7;
 $server->{balance_start_rounds} = 7;
 $server->{balance_rounds_delay} = 3;
-$server->{balance_max_wins} = 1;
+$server->{balance_max_wins} = 3;
 $server->{balance_ignore_bots} = 0;
 $server->{switch_admins} = 0;
 $server->{balance_switch_only_dead} = 0;
@@ -1019,16 +1078,18 @@ $server->{srv_players} = \%balanced_roster;
 $server->analyze_teams();
 acknowledge_test_swaps($server);
 is(scalar @{$server->{test_switches} || []}, 0,
-	"population at MinPlayers suppresses score-based swaps");
+	"population at the configured ATB threshold suppresses score-based swaps");
 
 $server = new_server();
 $server->{map_rounds} = 12;
 $server->{num_trackable_players} = 10;
+$server->{numplayers} = 11;
+$server->{balance_min_players} = 10;
 $server->{minplayers} = 8;
 $server->{balance_analyze_rounds} = 7;
 $server->{balance_start_rounds} = 7;
 $server->{balance_rounds_delay} = 3;
-$server->{balance_max_wins} = 1;
+$server->{balance_max_wins} = 3;
 $server->{balance_ignore_bots} = 0;
 $server->{switch_admins} = 0;
 $server->{balance_switch_only_dead} = 0;
@@ -1043,9 +1104,11 @@ $server->{srv_players} = \%balanced_roster;
 $server->analyze_teams();
 acknowledge_test_swaps($server);
 is(scalar @{$server->{test_switches}}, 2,
-	"above MinPlayers, score balancing performs its planned paired transfer");
+	"above BalanceMinPlayers, score balancing performs its planned paired transfer");
 is_deeply([sort { $a <=> $b } @{$server->{test_switches}}], [2, 4],
 	"score balance excludes the strongest winning player and selects the weakest eligible opponent");
+like($server->{test_announcements}[-1], qr/^HLstatsX:CE - ATB - \[CT\].+ ⇄ \[T\].+reduce the team score lead\./,
+	"paired score swaps produce one readable HLstatsX-prefixed notice");
 ok(!(grep {
 	!$server->balance_player_was_swapped(
 		["", $_->{uniqueid}, 0, $_->{team}, 0, 0, 0, 1, $_->{userid}, $_->{is_bot}]
@@ -1058,12 +1121,41 @@ ok(!(grep {
 
 $server = new_server();
 $server->{map_rounds} = 12;
+$server->{numplayers} = 11;
+$server->{balance_min_players} = 10;
+$server->{balance_analyze_rounds} = 7;
+$server->{balance_start_rounds} = 7;
+$server->{balance_max_wins} = 3;
+$server->{balance_ignore_bots} = 0;
+$server->{switch_admins} = 0;
+$server->{balance_switch_only_dead} = 0;
+$server->{ba_ct_wins} = 5;
+$server->{ba_ts_wins} = 8;
+%balanced_roster = ();
+for my $index (1 .. 3) {
+	$balanced_roster{"t$index"} = balance_player($index, "TERRORIST", 0, 20 - $index);
+	$balanced_roster{"ct$index"} = balance_player($index + 3, "CT", 0, $index);
+}
+$server->{srv_players} = \%balanced_roster;
+$server->analyze_teams();
+is(scalar @{$server->{test_switches} || []}, 0,
+	"a lead equal to the configured three-win maximum does not trigger score balancing");
+$server->{ba_ts_wins} = 9;
+$server->analyze_teams();
+acknowledge_test_swaps($server);
+is(scalar @{$server->{test_switches}}, 2,
+	"score balancing rechecks and starts once the lead exceeds the three-win maximum");
+
+$server = new_server();
+$server->{map_rounds} = 12;
 $server->{num_trackable_players} = 10;
+$server->{numplayers} = 11;
+$server->{balance_min_players} = 10;
 $server->{minplayers} = 8;
 $server->{balance_analyze_rounds} = 7;
 $server->{balance_start_rounds} = 7;
 $server->{balance_rounds_delay} = 3;
-$server->{balance_max_wins} = 1;
+$server->{balance_max_wins} = 3;
 $server->{balance_ignore_bots} = 0;
 $server->{ba_ct_wins} = 0;
 $server->{ba_ts_wins} = 7;
@@ -1098,6 +1190,8 @@ is(scalar(grep { $_->{team} eq "CT" } values %{$server->{srv_players}}), 3,
 
 $server = new_server();
 $server->{num_trackable_players} = 6;
+$server->{numplayers} = 6;
+$server->{balance_min_players} = 4;
 $server->{minplayers} = 4;
 $server->{balance_ignore_bots} = 0;
 $server->{balance_max_wins} = 1;
@@ -1144,11 +1238,13 @@ is(scalar @{$server->{test_switches} || []}, 0,
 $server = new_server();
 $server->{map_rounds} = 12;
 $server->{num_trackable_players} = 10;
+$server->{numplayers} = 11;
+$server->{balance_min_players} = 10;
 $server->{minplayers} = 8;
 $server->{balance_analyze_rounds} = 7;
 $server->{balance_start_rounds} = 7;
 $server->{balance_rounds_delay} = 3;
-$server->{balance_max_wins} = 1;
+$server->{balance_max_wins} = 3;
 $server->{balance_ignore_bots} = 0;
 $server->{switch_admins} = 0;
 $server->{balance_switch_only_dead} = 0;
@@ -1175,12 +1271,14 @@ is(scalar @{$server->{test_switches} || []}, 0,
 
 $server = new_server();
 $server->{num_trackable_players} = 10;
+$server->{numplayers} = 11;
+$server->{balance_min_players} = 10;
 $server->{minplayers} = 8;
 $server->{map_rounds} = 12;
 $server->{balance_analyze_rounds} = 7;
 $server->{balance_start_rounds} = 7;
 $server->{balance_rounds_delay} = 3;
-$server->{balance_max_wins} = 1;
+$server->{balance_max_wins} = 3;
 $server->{balance_ignore_bots} = 0;
 $server->{switch_admins} = 0;
 $server->{balance_switch_only_dead} = 0;

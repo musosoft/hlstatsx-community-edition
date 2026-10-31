@@ -2230,7 +2230,8 @@ while ($loop = &getLine()) {
 				$std_cfg{"BalanceStartRounds"}				= 7;
 				$std_cfg{"BalanceRoundsDelay"}				= 3;
 				$std_cfg{"BalanceAnalyzeRounds"}			= 7;
-				$std_cfg{"BalanceMaxWins"}					= 1;
+				$std_cfg{"BalanceMaxWins"}					= 3;
+				$std_cfg{"BalanceMinPlayers"}				= 10;
 				$std_cfg{"BalanceIgnoreBots"}				= 0;
 				$std_cfg{"IgnoreBots"}						= 1;
 				$std_cfg{"SkillMode"}						= 0;
@@ -2402,7 +2403,9 @@ while ($loop = &getLine()) {
 				$g_servers{$s_addr}->set("balance_analyze_rounds", $s_cfg{"BalanceAnalyzeRounds"});
 				&printEvent("SERVER", "Auto-Team-Balance analyze rounds set to ".$s_cfg{"BalanceAnalyzeRounds"}, 1);
 				$g_servers{$s_addr}->set("balance_max_wins", $s_cfg{"BalanceMaxWins"});
-				&printEvent("SERVER", "Auto-Team-Balance max wins set to ".$s_cfg{"BalanceMaxWins"}, 1);
+				&printEvent("SERVER", "Auto-Team-Balance maximum score lead set to ".$s_cfg{"BalanceMaxWins"}, 1);
+				$g_servers{$s_addr}->set("balance_min_players", $s_cfg{"BalanceMinPlayers"});
+				&printEvent("SERVER", "Auto-Team-Balance score balancing minimum player count set to ".$s_cfg{"BalanceMinPlayers"}, 1);
 				
 				if ($s_cfg{"IgnoreBots"} > 0) {
 					$g_servers{$s_addr}->set("ignore_bots", "1");

@@ -150,7 +150,8 @@ sub new
 	$self->{balance_start_rounds} = 0;
 	$self->{balance_rounds_delay} = 0;
 	$self->{balance_analyze_rounds} = 0;
-	$self->{balance_max_wins} = 0;
+	$self->{balance_max_wins} = 3;
+	$self->{balance_min_players} = 10;
 	
 	# Messaging commands
 	$self->{show_stats}                  	= 0;
@@ -877,7 +878,8 @@ sub apply_team_balance_config_defaults
 		BalanceStartRounds => 7,
 		BalanceRoundsDelay => 3,
 		BalanceAnalyzeRounds => 7,
-		BalanceMaxWins => 1,
+		BalanceMaxWins => 3,
+		BalanceMinPlayers => 10,
 		BalanceIgnoreBots => 0,
 	);
 
@@ -888,6 +890,11 @@ sub apply_team_balance_config_defaults
 	}
 	if ($config->{BalanceAnalyzeRounds} !~ /^\d+$/ || $config->{BalanceAnalyzeRounds} < 1) {
 		$config->{BalanceAnalyzeRounds} = $defaults{BalanceAnalyzeRounds};
+	}
+	for my $key (qw(BalanceMaxWins BalanceMinPlayers)) {
+		if ($config->{$key} !~ /^\d+$/) {
+			$config->{$key} = $defaults{$key};
+		}
 	}
 
 	return $config;
@@ -1423,14 +1430,18 @@ sub get_join_team_policy
 	}
 
 	my ($ct_count, $ts_count, $reserved_ct_count, $reserved_ts_count) = (0, 0, 0, 0);
+	my ($ct_bot_count, $ts_bot_count) = (0, 0);
 	my $bot_fill_mode = $self->is_bot_fill_mode();
 	for my $other (values %{$self->{srv_players}}) {
 		next if $other->{userid} == $player->{userid}
 			|| ($other->{uniqueid} // "") eq $uniqueid;
-		# In fill mode bots are temporary quota occupants: a human connect can
-		# remove one asynchronously. Balance human placements against humans and
-		# pending reservations, then let round-end ATB settle the actual roster.
-		next if $bot_fill_mode && $other->{is_bot};
+		if ($bot_fill_mode && $other->{is_bot}) {
+			$ct_bot_count++ if ($other->{team} // "") eq "CT";
+			$ts_bot_count++ if ($other->{team} // "") eq "TERRORIST";
+			# Fill bots are temporary quota occupants. Track their side for tie
+			# breaks, but balance human placements against humans and reservations.
+			next;
+		}
 		if (($other->{team} // "") eq "CT") {
 			$ct_count++;
 		} elsif (($other->{team} // "") eq "TERRORIST") {
@@ -1448,13 +1459,25 @@ sub get_join_team_policy
 	}
 
 	my $preferred_team;
-	if ($ts_count < $ct_count) {
+	my $score_lead = abs(($self->{map_ct_wins} || 0) - ($self->{map_ts_wins} || 0));
+	my $score_losing_team = ($self->{map_ct_wins} || 0) < ($self->{map_ts_wins} || 0) ? 3 : 2;
+	if ($kd_locked && $score_lead > ($self->{balance_max_wins} || 0)) {
+		# A high-KD player must not be able to choose the map's winning side
+		# while ATB is trying to close a meaningful lead.
+		$preferred_team = $score_losing_team;
+	} elsif ($ts_count < $ct_count) {
 		$preferred_team = 2;
 	} elsif ($ct_count < $ts_count) {
 		$preferred_team = 3;
 	} elsif ($reserved_ts_count < $reserved_ct_count) {
 		$preferred_team = 2;
 	} elsif ($reserved_ct_count < $reserved_ts_count) {
+		$preferred_team = 3;
+	} elsif ($bot_fill_mode && $ts_bot_count > $ct_bot_count) {
+		# If human counts and reservations are even, place the joiner where a
+		# quota bot can vacate instead of creating a human imbalance elsewhere.
+		$preferred_team = 2;
+	} elsif ($bot_fill_mode && $ct_bot_count > $ts_bot_count) {
 		$preferred_team = 3;
 	} elsif (($self->{map_ts_wins} || 0) < ($self->{map_ct_wins} || 0)) {
 		$preferred_team = 2;
@@ -1595,21 +1618,27 @@ sub analyze_teams
 	# Round-end swaps are dispatched individually and can be partially refused
 	# when the SourceMod prestart window closes. Keep this path count-only so a
 	# failed half of a score pair cannot create a team-count imbalance.
+	my $balance_population = $use_live_team_counts
+		? $ct_count + $ts_count
+		: ($self->{numplayers} || $self->{num_trackable_players} || 0);
+	my $balance_min_players = defined($self->{balance_min_players})
+		? $self->{balance_min_players} : 10;
 	my $can_balance_by_score = !$allow_alive
-		&& $self->{num_trackable_players} > $self->{minplayers};
+		&& $balance_population > $balance_min_players;
 	# At round end, allow score history to choose the one transfer needed to
 	# repair a count gap, but never run a separate paired score swap afterward.
-	my $score_aware_count_correction = $self->{num_trackable_players} > $self->{minplayers};
+	my $score_aware_count_correction = $balance_population > $balance_min_players;
 	my ($ct_excess, $ts_excess, $has_map_bias) = (0, 0, 0);
 	if ($can_balance_by_score) {
 		($ct_excess, $ts_excess, $has_map_bias) = $self->get_map_adjusted_team_excess($ct_wins, $ts_wins);
 	}
+	my $max_score_lead = $self->{balance_max_wins} || 0;
 	my $ct_underperforming = $has_map_bias
-		? $ct_excess < -$self->{balance_max_wins}
-		: $ct_wins <= $self->{balance_max_wins};
+		? $ts_excess - $ct_excess > $max_score_lead
+		: $ct_wins + $max_score_lead < $ts_wins;
 	my $ts_underperforming = $has_map_bias
-		? $ts_excess < -$self->{balance_max_wins}
-		: $ts_wins <= $self->{balance_max_wins};
+		? $ct_excess - $ts_excess > $max_score_lead
+		: $ts_wins + $max_score_lead < $ct_wins;
 	if ($self->{ba_last_swap} > 0) {
 		$self->{ba_last_swap}--;
 	}
@@ -1674,10 +1703,11 @@ sub analyze_teams
 			|| $self->balance_player_swap_pending($entry)) {
 			next;
 		}
-		$self->messageAll("HLstatsX:CE - ATB - Player [" . @{$entry}[3] . "] " . @{$entry}[0] . " was switched to ensure an even team count.", 0, 1);
 		if ($self->request_balance_player_swap(
 			$entry, $count_as_skill_balance && !$entry->[9], $allow_alive
 		)) {
+			my $destination_team = @{$entry}[3] eq "CT" ? "T" : "CT";
+			$self->messageAll("HLstatsX:CE - ATB - " . @{$entry}[0] . " switched [" . @{$entry}[3] . " → " . $destination_team . "] to balance team sizes.", 0, 1);
 			$action_done++;
 			$needed_players--;
 		}
@@ -1741,16 +1771,22 @@ sub analyze_teams
 	}
 
 	if ($need_ct && @ct_switch_player && $need_ts && @ts_switch_player) {
-		$self->messageAll("HLstatsX:CE - ATB - Switching players [CT] " . @ct_switch_player[0] . " ⇆ [T] " . @ts_switch_player[0] . " to balance teams.", 0, 1);
 		my $ct_requested = $self->request_balance_player_swap(\@ct_switch_player, 1, $allow_alive);
 		my $ts_requested = $self->request_balance_player_swap(\@ts_switch_player, 1, $allow_alive);
+		if ($ct_requested && $ts_requested) {
+			$self->messageAll("HLstatsX:CE - ATB - [CT] " . $ct_switch_player[0] . " ⇄ [T] " . $ts_switch_player[0] . " switched to reduce the team score lead.", 0, 1);
+		} elsif ($ct_requested) {
+			$self->messageAll("HLstatsX:CE - ATB - " . $ct_switch_player[0] . " switched [CT → T] to reduce the team score lead.", 0, 1);
+		} elsif ($ts_requested) {
+			$self->messageAll("HLstatsX:CE - ATB - " . $ts_switch_player[0] . " switched [T → CT] to reduce the team score lead.", 0, 1);
+		}
 		return if !$ct_requested && !$ts_requested;
 	} elsif ($need_ct && @ct_switch_player && !$need_ts) {
-		$self->messageAll("HLstatsX:CE - ATB - Player [CT] " . @ct_switch_player[0] . " was switched to balance teams.", 0, 1);
 		return if !$self->request_balance_player_swap(\@ct_switch_player, 1, $allow_alive);
+		$self->messageAll("HLstatsX:CE - ATB - " . $ct_switch_player[0] . " switched [CT → T] to reduce the team score lead.", 0, 1);
 	} elsif ($need_ts && @ts_switch_player && !$need_ct) {
-		$self->messageAll("HLstatsX:CE - ATB - Player [T] " . @ts_switch_player[0] . " was switched to balance teams.", 0, 1);
 		return if !$self->request_balance_player_swap(\@ts_switch_player, 1, $allow_alive);
+		$self->messageAll("HLstatsX:CE - ATB - " . $ts_switch_player[0] . " switched [T → CT] to reduce the team score lead.", 0, 1);
 	} else {
 		# No players found or needed to switch.
 		return;

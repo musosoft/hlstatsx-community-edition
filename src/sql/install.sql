@@ -2723,6 +2723,8 @@ INSERT INTO `hlstats_Games_Defaults` (`code`, `parameter`, `value`) VALUES
 ('csp', 'BalanceSwitchOnlyDead', '1'),
 ('csp', 'BalanceStartRounds', '7'),
 ('csp', 'BalanceRoundsDelay', '3'),
+('csp', 'BalanceMaxWins', '3'),
+('csp', 'BalanceMinPlayers', '10'),
 ('csp', 'BalanceIgnoreBots', '0'),
 ('css', 'Admins', ''),
 ('css', 'AutoBanRetry', '0'),
@@ -2752,6 +2754,8 @@ INSERT INTO `hlstats_Games_Defaults` (`code`, `parameter`, `value`) VALUES
 ('css', 'BalanceSwitchOnlyDead', '1'),
 ('css', 'BalanceStartRounds', '7'),
 ('css', 'BalanceRoundsDelay', '3'),
+('css', 'BalanceMaxWins', '3'),
+('css', 'BalanceMinPlayers', '10'),
 ('css', 'BalanceIgnoreBots', '0'),
 ('cstrike', 'Admins', ''),
 ('cstrike', 'AutoBanRetry', '0'),
@@ -2781,6 +2785,8 @@ INSERT INTO `hlstats_Games_Defaults` (`code`, `parameter`, `value`) VALUES
 ('cstrike', 'BalanceSwitchOnlyDead', '1'),
 ('cstrike', 'BalanceStartRounds', '7'),
 ('cstrike', 'BalanceRoundsDelay', '3'),
+('cstrike', 'BalanceMaxWins', '3'),
+('cstrike', 'BalanceMinPlayers', '10'),
 ('cstrike', 'BalanceIgnoreBots', '0'),
 ('dod', 'Admins', ''),
 ('dod', 'AutoBanRetry', '0'),
@@ -3300,6 +3306,8 @@ INSERT INTO `hlstats_Games_Defaults` (`code`, `parameter`, `value`) VALUES
 ('csgo', 'BalanceSwitchOnlyDead', '1'),
 ('csgo', 'BalanceStartRounds', '7'),
 ('csgo', 'BalanceRoundsDelay', '3'),
+('csgo', 'BalanceMaxWins', '3'),
+('csgo', 'BalanceMinPlayers', '10'),
 ('csgo', 'BalanceIgnoreBots', '0'),
 ('dinodday', 'Admins', ''),
 ('dinodday', 'AutoBanRetry', '0'),
@@ -3354,6 +3362,8 @@ INSERT INTO `hlstats_Games_Defaults` (`code`, `parameter`, `value`) VALUES
 ('cs2', 'BalanceSwitchOnlyDead', '1'),
 ('cs2', 'BalanceStartRounds', '7'),
 ('cs2', 'BalanceRoundsDelay', '3'),
+('cs2', 'BalanceMaxWins', '3'),
+('cs2', 'BalanceMinPlayers', '10'),
 ('cs2', 'BalanceIgnoreBots', '0');
 
 
@@ -6906,7 +6916,8 @@ INSERT INTO `hlstats_Servers_Config_Default` (`parameter`, `value`, `description
 ('BalanceStartRounds', '7', 'Minimal round count after map change, when AutoBalance by skill should start. Value lower than 2 is ignored. Default is 7.'),
 ('BalanceRoundsDelay', '3', 'Rounds before next AutoBalance by skill. Default is 3.'),
 ('BalanceAnalyzeRounds', '7', 'How many last rounds are analyzed for balancing. Default is 7.'),
-('BalanceMaxWins', '1', 'Defines maximum wins trough BalanceAnalyzeRounds for team to balance. More wins = more aggressive balance. Default 1.'),
+('BalanceMaxWins', '3', 'Maximum score lead allowed between teams across BalanceAnalyzeRounds before ATB balances. A team is balanced when the lead is at or below this value. Default 3.'),
+('BalanceMinPlayers', '10', 'Score-based ATB starts only when more than this many players are on the server. Count includes players and bots. Default 10.'),
 ('BalanceIgnoreBots', '0', 'If enabled, bots are ignored by AutoBalance. 1=on 0=off(default).'),
 ('LogSecret', '', 'Source engine only: match this to sv_logsecret on the game server to reject unsigned log packets. Empty disables validation. Reload the daemon after changing it.');
 -- --------------------------------------------------------
