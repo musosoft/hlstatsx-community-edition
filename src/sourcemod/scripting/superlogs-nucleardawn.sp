@@ -89,7 +89,7 @@ public OnPluginStart()
 {
 	CreatePopulateWeaponTrie();
 	CreateConVar("superlogs_nucleardawn_version", VERSION, NAME, FCVAR_SPONLY|FCVAR_REPLICATED|FCVAR_NOTIFY);
-		
+
 	HookEvent("player_death", Event_PlayerDeathPre, EventHookMode_Pre);
 	HookEvent("promoted_to_commander", Event_PromotedToCommander);
 	HookEvent("resource_captured", Event_ResourceCaptured);
@@ -351,8 +351,7 @@ public Event_StructureDeath(Handle:event, const String:name[], bool:dontBroadcas
 	{
 		decl String:sBuffer[32];
 		GetEdictClassname(iEnt, sBuffer, sizeof(sBuffer));
-		PrintToChatAll("%N destroyed %s", iAttacker, sBuffer);
-		
+
 		if(StrEqual(sBuffer, "struct_armoury"))
 		{
 			LogPlayerEvent(iAttacker, "triggered", "armoury_destroyed");

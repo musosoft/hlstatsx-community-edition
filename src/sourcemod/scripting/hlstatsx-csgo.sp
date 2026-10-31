@@ -236,13 +236,14 @@ public OnClientPostAdminCheck(client)
 {
 	if (g_bGameCanDoMotd && !IsFakeClient(client))
 	{
-		QueryClientConVar(client, "cl_disablehtmlmotd", motdQuery);
+		QueryClientConVar(client, "cl_disablehtmlmotd", motdQuery, GetClientUserId(client));
 	}
 }
 
-public motdQuery(QueryCookie:cookie, client, ConVarQueryResult:result, const String:cvarName[], const String:cvarValue[])
+public motdQuery(QueryCookie:cookie, client, ConVarQueryResult:result, const String:cvarName[], const String:cvarValue[], any:userid)
 {
-	if (result == ConVarQuery_Okay && StringToInt(cvarValue) == 0 || result != ConVarQuery_Okay)
+	// The answer may arrive after the player left and another player took the slot.
+	if (GetClientOfUserId(userid) == client && (result != ConVarQuery_Okay || StringToInt(cvarValue) == 0))
 	{
 		g_bPlyrCanDoMotd[client] = true;
 	}

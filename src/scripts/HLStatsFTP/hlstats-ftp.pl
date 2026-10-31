@@ -170,6 +170,12 @@ my @todo_files = ();
 my @todo_mtimes = ();
 
 foreach my $file (@files) {
+	# FTP directory listings are remote input. Only accept plain log file names
+	# before using them as paths in the local temporary directory.
+	unless ($file =~ /^[\w.-]+\.log$/ && $file !~ /^\./) {
+		output("    - skipping unexpected file name \"$file\"\n");
+		next;
+	}
 	output("    - \"$file\" ");
 	my $mtime = $ftp->mdtm($file) || die "FTP mtdm failed: $!";
 	output("(mtime $mtime): ");
@@ -205,7 +211,20 @@ output(" + parsing log files:\n");
 for (my $i = 0; $i <= $#todo_files; $i++) {
 	my $progress = "(" . ($i+1) . "/" . ($#todo_files+1) . ")";
 	output("    - \"" . $todo_files[$i] . "\" " .  $progress . ": parsing... ");
-	system("./hlstats.pl --stdin --server-ip $gs_ip --server-port $gs_port < $tmp_dir/" . $todo_files[$i] . " > /dev/null");
+	my $parse_status;
+	open(my $saved_in, '<&', \*STDIN) || die "Dup STDIN failed: $!";
+	open(my $saved_out, '>&', \*STDOUT) || die "Dup STDOUT failed: $!";
+	open(STDIN, '<', "$tmp_dir/$todo_files[$i]") || die "Open \"$tmp_dir/$todo_files[$i]\" failed: $!";
+	open(STDOUT, '>', '/dev/null') || die "Open /dev/null failed: $!";
+	system('./hlstats.pl', '--stdin', '--server-ip', $gs_ip, '--server-port', $gs_port);
+	$parse_status = $?;
+	open(STDIN, '<&', $saved_in) || die "Restore STDIN failed: $!";
+	open(STDOUT, '>&', $saved_out) || die "Restore STDOUT failed: $!";
+	close($saved_in) || die "Close saved STDIN failed: $!";
+	close($saved_out) || die "Close saved STDOUT failed: $!";
+	die "Failed to execute hlstats.pl while parsing $todo_files[$i]: $!\n" if $parse_status == -1;
+	die "hlstats.pl terminated by signal " . ($parse_status & 127) . " while parsing $todo_files[$i]\n" if $parse_status & 127;
+	die "hlstats.pl failed while parsing $todo_files[$i] (exit " . ($parse_status >> 8) . ")\n" if $parse_status >> 8;
 	output("updating last mtime...");
 	open(LASTMTIME, ">$last_mtime_filename") || die "Open file \"$last_mtime_filename\" failed: $!";
 	print LASTMTIME $todo_mtimes[$i];

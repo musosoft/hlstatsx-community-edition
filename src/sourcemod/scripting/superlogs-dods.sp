@@ -25,7 +25,7 @@
 #include <sdktools>
 
 #define NAME "SuperLogs: DOD:S"
-#define VERSION "1.1.3"
+#define VERSION "1.1.4"
 
 #define MAX_LOG_WEAPONS    27
 #define IGNORE_SHOTS_START	20
@@ -139,6 +139,12 @@ public OnPluginStart()
 	CreateTimer(1.0, LogMap);
 	
 	GetTeams();
+
+	// Cvars persist across plugin reloads; apply their current values to the hooks.
+	OnCvarWstatsChange(g_cvar_wstats, "", "");
+	OnCvarHeadshotsChange(g_cvar_headshots, "", "");
+	OnCvarLocationsChange(g_cvar_locations, "", "");
+	OnCvarKtrajChange(g_cvar_ktraj, "", "");
 }
 
 

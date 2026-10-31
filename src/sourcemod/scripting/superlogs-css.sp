@@ -129,13 +129,6 @@ public OnPluginStart()
 	g_cvar_locations = CreateConVar("superlogs_locations", "1", "Enable logging of location on player death (default on)", 0, true, 0.0, true, 1.0);
 	g_cvar_ktraj = CreateConVar("superlogs_ktraj", "0", "Enable Psychostats \"KTRAJ\" logging (default off)", 0, true, 0.0, true, 1.0);
 	
-	// cvars will have already existed if plugin was reloaded and might be set to non-default values
-	g_logwstats = GetConVarBool(g_cvar_wstats);
-	g_logheadshots = GetConVarBool(g_cvar_headshots);
-	g_logactions = GetConVarBool(g_cvar_actions);
-	g_loglocations = GetConVarBool(g_cvar_locations);
-	g_logktraj = GetConVarBool(g_cvar_ktraj);
-	
 	HookConVarChange(g_cvar_wstats, OnCvarWstatsChange);
 	HookConVarChange(g_cvar_headshots, OnCvarHeadshotsChange);
 	HookConVarChange(g_cvar_actions, OnCvarActionsChange);
@@ -152,6 +145,13 @@ public OnPluginStart()
 	CreateTimer(1.0, LogMap);
 	
 	GetTeams();
+
+	// Existing cvars retain their values when the plugin is reloaded.
+	OnCvarWstatsChange(g_cvar_wstats, "", "");
+	OnCvarHeadshotsChange(g_cvar_headshots, "", "");
+	OnCvarActionsChange(g_cvar_actions, "", "");
+	OnCvarLocationsChange(g_cvar_locations, "", "");
+	OnCvarKtrajChange(g_cvar_ktraj, "", "");
 }
 
 

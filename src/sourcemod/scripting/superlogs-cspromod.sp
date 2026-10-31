@@ -54,15 +54,14 @@ public Event_PlayerConnect(Handle:event, const String:name[], bool:dontBroadcast
 
 public Event_PlayerDisconnect(Handle:event, const String:name[], bool:dontBroadcast)
 {
-	new client = GetClientOfUserId(GetEventInt(event, "userid"));
 	decl String:cname[MAX_NAME_LENGTH];
-	GetClientName(client, cname, sizeof(cname));
+	GetEventString(event, "name", cname, sizeof(cname));
 	decl String:cauth[32];
-	GetClientAuthId(client, AuthId_Engine, cauth, sizeof(cauth));
+	GetEventString(event, "networkid", cauth, sizeof(cauth));
 	decl String:creason[128];
 	GetEventString(event, "reason", creason, sizeof(creason));
 
-	LogToGame("\"%s<%d><%s><>\" disconnected (reason \"%s\")", cname, client, cauth, creason);
+	LogToGame("\"%s<%d><%s><>\" disconnected (reason \"%s\")", cname, GetEventInt(event, "userid"), cauth, creason);
 }
 
 public Event_PlayerDeath(Handle:event, const String:name[], bool:dontBroadcast)

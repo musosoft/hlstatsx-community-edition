@@ -148,6 +148,15 @@ public OnPluginStart()
 	CreateTimer(1.0, LogMap);
 	
 	GetTeams(true);
+
+	// Existing cvars retain their values when the plugin is reloaded.
+	OnCvarWstatsChange(g_cvar_wstats, "", "");
+	OnCvarActionsChange(g_cvar_actions, "", "");
+	OnCvarHeadshotsChange(g_cvar_headshots, "", "");
+	OnCvarChatChange(g_cvar_chat, "", "");
+	OnCvarCapturesChange(g_cvar_captures, "", "");
+	OnCvarLocationsChange(g_cvar_locations, "", "");
+	OnCvarKtrajChange(g_cvar_ktraj, "", "");
 }
 
 
@@ -183,18 +192,14 @@ public Event_PlayerHurt(Handle:event, const String:name[], bool:dontBroadcast)
 	//  "weapon"		"string"		// Weapon name, like WEAPON_AK47
 
 	new attacker  = GetEventInt(event, "attacker");
-	new victim = GetEventInt(event, "userid");
+	new victim = GetClientOfUserId(GetEventInt(event, "userid"));
 
-	if (attacker > 0 && attacker != victim)
+	if (attacker > 0 && attacker <= MaxClients && attacker != victim)
 	{
 		// ... wtf insurgency... userid is userid and attacker is client index?
 		//attacker = GetClientOfUserId(attacker);
 		
 		new hitgroup  = GetEventInt(event, "hitgroup");
-		if (hitgroup < 8)
-		{
-			hitgroup += LOG_HIT_OFFSET;
-		}
 		
 		if (g_logwstats)
 		{
@@ -206,9 +211,13 @@ public Event_PlayerHurt(Handle:event, const String:name[], bool:dontBroadcast)
 			if (weapon_index > -1)  {
 				g_weapon_stats[attacker][weapon_index][LOG_HIT_HITS]++;
 				g_weapon_stats[attacker][weapon_index][LOG_HIT_DAMAGE]  += GetEventInt(event, "dmg_health");
-				g_weapon_stats[attacker][weapon_index][hitgroup]++;
+				// Body parts are hitgroups 0-7; gear has no database column.
+				if (hitgroup < 8)
+				{
+					g_weapon_stats[attacker][weapon_index][hitgroup + LOG_HIT_OFFSET]++;
+				}
 				
-				if (hitgroup == (HITGROUP_HEAD+LOG_HIT_OFFSET))
+				if (hitgroup == HITGROUP_HEAD)
 				{
 					g_weapon_stats[attacker][weapon_index][LOG_HIT_HEADSHOTS]++;
 				}
@@ -217,7 +226,7 @@ public Event_PlayerHurt(Handle:event, const String:name[], bool:dontBroadcast)
 			}
 		}
 		
-		if (g_logheadshots && hitgroup == (HITGROUP_HEAD+LOG_HIT_OFFSET))
+		if (g_logheadshots && hitgroup == HITGROUP_HEAD)
 		{
 			LogPlayerEvent(attacker, "triggered", "headshot");
 		}

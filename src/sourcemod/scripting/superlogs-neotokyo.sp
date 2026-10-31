@@ -58,6 +58,15 @@ public OnPluginStart()
 	HookEvent("player_death", Event_PlayerDeathPre, EventHookMode_Pre);
 	
 	CreateTimer(1.0, LogMap);
+
+	// Existing cvars retain their values when the plugin is reloaded.
+	OnCvarHeadshotsChange(g_cvar_headshots, "", "");
+	OnCvarLocationsChange(g_cvar_locations, "", "");
+}
+
+public OnMapStart()
+{
+	GetTeams();
 }
 
 

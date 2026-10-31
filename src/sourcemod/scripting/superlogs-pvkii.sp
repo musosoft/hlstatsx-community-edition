@@ -25,7 +25,7 @@
 #include <sdktools>
 
 #define NAME "SuperLogs: PVKII"
-#define VERSION "1.0.1"
+#define VERSION "1.0.2"
 
 #define MAX_LOG_WEAPONS 6
 #define MAX_WEAPON_LEN 14
@@ -48,7 +48,7 @@ new bool:g_logktraj = true;
 new bool:g_bHasChest[MAXPLAYERS+1] = {false,...};
 new bool:g_bHasGrail[MAXPLAYERS+1] = {false,...};
 
-new g_iLastClass = -1;
+new g_iLastClass[MAXPLAYERS+1] = {-1, ...};
 
 new const String:g_szClassNames[][] = {
 	"Skirmisher",
@@ -129,6 +129,9 @@ public OnPluginStart()
 	HookEvent("chest_capture", Event_ChestCapture);
 		
 	CreateTimer(1.0, LogMap);
+
+	// The cvar defaults off, while the legacy in-memory flag defaults on.
+	OnCvarKtrajChange(g_cvar_ktraj, "", "");
 }
 
 public OnMapStart()
@@ -138,7 +141,7 @@ public OnMapStart()
 
 public OnClientPutInServer(client)
 {
-	g_iLastClass = -1;
+	g_iLastClass[client] = -1;
 	reset_player_stats(client);
 	g_bHasChest[client] = false;
 	g_bHasGrail[client] = false;
@@ -276,11 +279,11 @@ public Event_PlayerSpawn(Handle:event, const String:name[], bool:dontBroadcast)
 		if (IsClientInGame(client))
 		{
 			new iCurrentClass = GetEntProp(client, Prop_Send, "m_iPlayerClass");
-			if (iCurrentClass > -1 && iCurrentClass != g_iLastClass)
+			if (iCurrentClass > -1 && iCurrentClass < sizeof(g_szClassNames) && iCurrentClass != g_iLastClass[client])
 			{
 				LogRoleChange(client, g_szClassNames[iCurrentClass]);
 			}
-			g_iLastClass = iCurrentClass;
+			g_iLastClass[client] = iCurrentClass;
 		}
 	}
 }

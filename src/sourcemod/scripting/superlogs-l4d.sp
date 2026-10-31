@@ -146,6 +146,12 @@ public OnPluginStart()
 	GetTeams();
 	
 	g_iActiveWeaponOffset = FindSendPropInfo("CTerrorPlayer", "m_hActiveWeapon");
+
+	// Existing cvars retain their values when the plugin is reloaded.
+	OnCvarWstatsChange(g_cvar_wstats, "", "");
+	OnCvarActionsChange(g_cvar_actions, "", "");
+	OnCvarHeadshotsChange(g_cvar_headshots, "", "");
+	OnCvarMeleeOverrideChange(g_cvar_meleeoverride, "", "");
 }
 
 

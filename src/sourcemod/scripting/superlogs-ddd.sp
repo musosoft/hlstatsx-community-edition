@@ -219,17 +219,17 @@ public OnTakeDamage( victim, attacker, inflictor, Float:damage, damagetype )
 		
 		new weapon_index = get_weapon_index(weapon[PREFIX_LEN]);
 		new hitgroup = g_iNextHitgroup[victim];
-		if ( hitgroup < 8 )
-		{
-			hitgroup += LOG_HIT_OFFSET;
-		}
 		
 		new bool:headshot = ( !IsPlayerAlive( victim ) && g_iNextHitgroup[victim] == HITGROUP_HEAD );
 		if ( weapon_index > -1 )
 		{
 			g_weapon_stats[attacker][weapon_index][LOG_HIT_HITS]++;
 			g_weapon_stats[attacker][weapon_index][LOG_HIT_DAMAGE] += RoundToNearest( damage );
-			g_weapon_stats[attacker][weapon_index][hitgroup]++;
+			// Body parts are hitgroups 0-7; gear has no database column.
+			if ( hitgroup < 8 )
+			{
+				g_weapon_stats[attacker][weapon_index][hitgroup + LOG_HIT_OFFSET]++;
+			}
 			if ( headshot )
 			{
 				g_weapon_stats[attacker][weapon_index][LOG_HIT_HEADSHOTS]++;

@@ -44,7 +44,7 @@ The daemon listens on UDP port `27500`. External servers must send logs there. C
 
 The exact ports, service names, and supported environment variables live in the Compose and configuration files. The [upstream integration review](https://github.com/musosoft/hlstatsx-community-edition/blob/dev/docs/curated-edition-upstream-review.md) explains the current DB96 upgrade and compatibility limits.
 
-Visitors can choose the **System (auto)** theme to follow their browser's light/dark preference, or select Light or Dark explicitly when the theme selector is enabled.
+Administrators can select one of the six built-in themes from the Laravel theme manager. Visitor-selected light/dark preferences from the removed PHP frontend are not currently available.
 
 Keep the persistent database volume when stopping the stack. `docker compose down -v` removes it and its data.
 

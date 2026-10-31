@@ -27,7 +27,7 @@
 #include <sdkhooks>
 
 #define NAME "SuperLogs: ZPS"
-#define VERSION "1.1.2"
+#define VERSION "1.1.3"
 
 #define MAX_LOG_WEAPONS 11
 #define MAX_WEAPON_LEN 12
@@ -120,6 +120,11 @@ public OnPluginStart()
 	HookEvent("player_disconnect", Event_PlayerDisconnect, EventHookMode_Pre);
 		
 	CreateTimer(1.0, LogMap);
+
+	// Cvars persist across plugin reloads; apply their current values to the hooks.
+	OnCvarHeadshotsChange(g_cvar_headshots, "", "");
+	OnCvarLocationsChange(g_cvar_locations, "", "");
+	OnCvarKtrajChange(g_cvar_ktraj, "", "");
 }
 
 public OnAllPluginsLoaded()
@@ -177,10 +182,6 @@ public OnTakeDamage(victim, attacker, inflictor, Float:damage, damagetype)
 	if (attacker > 0 && attacker <= MaxClients && victim > 0 && victim <= MaxClients)
 	{
 		new hitgroup = g_iNextHitgroup[victim];
-		if (hitgroup < 8)
-		{
-			hitgroup += LOG_HIT_OFFSET;
-		}
 		new bool:headshot = (GetClientHealth(victim) <= 0 && hitgroup == HITGROUP_HEAD);
 		
 		decl String: weapon[MAX_WEAPON_LEN + PREFIX_LEN];
@@ -190,6 +191,11 @@ public OnTakeDamage(victim, attacker, inflictor, Float:damage, damagetype)
 		{
 			g_weapon_stats[attacker][weapon_index][LOG_HIT_HITS]++;
 			g_weapon_stats[attacker][weapon_index][LOG_HIT_DAMAGE] += RoundToNearest(damage);
+			// Body parts are hitgroups 0-7; gear has no database column.
+			if (hitgroup < 8)
+			{
+				g_weapon_stats[attacker][weapon_index][hitgroup + LOG_HIT_OFFSET]++;
+			}
 			if (headshot)
 			{
 				g_weapon_stats[attacker][weapon_index][LOG_HIT_HEADSHOTS]++;

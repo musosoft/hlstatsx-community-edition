@@ -118,12 +118,19 @@ public void OnPluginStart()
 	HookEvent("player_death", Event_PlayerDeath);
 	HookEvents_Wstats();
 	HookEvents_Actions();
-		
+
 	CreateTimer(1.0, LogMap);
 	
 	GetTeams();
 
 	if (g_bLate) for (int i = 1; i <= MaxClients; i++) if (IsClientInGame(i)) OnClientPostAdminCheck(i);
+
+	// Reapply persisted cvars after the default event hooks have been installed.
+	OnConVarChanged(g_cvar_wstats, "", "");
+	OnConVarChanged(g_cvar_headshots, "", "");
+	OnConVarChanged(g_cvar_actions, "", "");
+	OnConVarChanged(g_cvar_locations, "", "");
+	OnConVarChanged(g_cvar_ktraj, "", "");
 }
 
 public void OnMapStart()
@@ -353,12 +360,11 @@ public Action LogMap(Handle timer)
 
 public void OnConVarChanged(ConVar convar, const char[] oldValue, const char[] newValue)
 {
-	if (StrEqual(oldValue, newValue)) {
-		return; 
-	}
-
 	if (convar == g_cvar_wstats) {
 
+		if (g_logwstats == g_cvar_wstats.BoolValue) {
+			return;
+		}
 		g_logwstats = g_cvar_wstats.BoolValue;
 
 		if (g_logwstats) {
@@ -380,6 +386,9 @@ public void OnConVarChanged(ConVar convar, const char[] oldValue, const char[] n
 
 	} else if (convar == g_cvar_headshots) {
 
+		if (g_logheadshots == g_cvar_headshots.BoolValue) {
+			return;
+		}
 		g_logheadshots = g_cvar_headshots.BoolValue;
 
 		if (g_logheadshots && !g_loglocations) {
@@ -390,6 +399,9 @@ public void OnConVarChanged(ConVar convar, const char[] oldValue, const char[] n
 
 	} else if (convar == g_cvar_actions) {
 
+		if (g_logactions == g_cvar_actions.BoolValue) {
+			return;
+		}
 		g_logactions = g_cvar_actions.BoolValue;
 		
 		if (g_logactions) {
@@ -411,6 +423,9 @@ public void OnConVarChanged(ConVar convar, const char[] oldValue, const char[] n
 
 	} else if (convar == g_cvar_locations) {
 
+		if (g_loglocations == g_cvar_locations.BoolValue) {
+			return;
+		}
 		g_loglocations = g_cvar_locations.BoolValue;
 
 		if (g_loglocations && !g_logheadshots) {
@@ -421,6 +436,9 @@ public void OnConVarChanged(ConVar convar, const char[] oldValue, const char[] n
 
 	} else if (convar == g_cvar_ktraj) {
 
+		if (g_logktraj == g_cvar_ktraj.BoolValue) {
+			return;
+		}
 		g_logktraj = g_cvar_ktraj.BoolValue;
 
 		if (g_logktraj && !g_logwstats && !g_logactions) {

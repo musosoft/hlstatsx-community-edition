@@ -127,6 +127,13 @@ public OnPluginStart()
 	CreateTimer(1.0, LogMap);
 	
 	GetTeams();
+
+	// Existing cvars retain their values when the plugin is reloaded.
+	OnCvarWstatsChange(g_cvar_wstats, "", "");
+	OnCvarHeadshotsChange(g_cvar_headshots, "", "");
+	OnCvarLocationsChange(g_cvar_locations, "", "");
+	OnCvarActionsChange(g_cvar_actions, "", "");
+	OnCvarClasschangesChange(g_cvar_classchanges, "", "");
 }
 
 
@@ -452,8 +459,9 @@ public OnCvarActionsChange(Handle:cvar, const String:oldVal[], const String:newV
 		{
 			HookEvent("round_end", Event_RoundEnd);
 		}
-		else if (!g_logactions)
+		else if (!g_logwstats)
 		{
+			// round_end also dumps weapon stats; keep it hooked while stats are enabled.
 			UnhookEvent("round_end", Event_RoundEnd);
 		}
 	}

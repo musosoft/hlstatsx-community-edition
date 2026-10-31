@@ -86,6 +86,21 @@ jobs:
           ${{ runner.os }}-buildx-laravel-
           ${{ runner.os }}-buildx-
 
+    - name: Daemon Perl regression tests
+      if: matrix.testenv == 'dev'
+      run: |
+        set -eu
+        docker build --target dev -f Dockerfile.daemon -t hlstatsx-daemon-ci .
+        docker run --rm \
+          --mount type=bind,source="$PWD",target=/workspace,readonly \
+          --workdir /workspace \
+          --entrypoint prove \
+          hlstatsx-daemon-ci -v \
+          test/test_daemon_timestamp.t \
+          test/test_hlstats_ftp.t \
+          test/test_hlx_atb_policy.pl \
+          test/test_proxy_daemon_envelope.t
+
     - name: Print buildx and compose
       run: |
         set -eu

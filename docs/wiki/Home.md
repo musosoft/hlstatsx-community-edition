@@ -4,10 +4,10 @@ HLstatsX community work is spread across many forks. This project gives that wor
 
 ## Current state
 
-- Release line: **1.13.0-CE / DB96**.
-- Shipped architecture: Laravel frontend, Perl daemon, MySQL, and existing game/plugin interfaces. The prior PHP frontend remains only in Git history.
-- Current curation includes selected security and compatibility fixes, DB96-safe changes, map features, responsive themes, and retained local CS:S Auto Team Balance work.
-- A Laravel frontend and a modernized daemon are goals under evaluation. They are not replacements in the current release.
+- Release line: **1.13.0-CE**. Official DB96 installations migrate to **DB97** for the Laravel frontend; the live database is DB97.
+- Shipped architecture: Laravel frontend at the site root, Perl 5.44 daemon, MySQL, and existing game/plugin interfaces. The prior PHP frontend remains only in Git history.
+- Current curation includes selected security and compatibility fixes, OpenStreetMap pages, Laravel's built-in theme manager, and retained local CS:S Auto Team Balance work.
+- The daemon remains the existing Perl implementation. Runtime maintenance is complete, but broader SnipeZilla/NiDE protocol modernization is still a separate, compatibility-tested task.
 
 ## Pages
 
