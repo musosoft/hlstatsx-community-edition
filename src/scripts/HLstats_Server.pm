@@ -1497,8 +1497,12 @@ sub get_join_team_policy
 	}
 
 	my $preferred_team;
-	my $score_lead = abs(($self->{map_ct_wins} || 0) - ($self->{map_ts_wins} || 0));
-	my $score_losing_team = ($self->{map_ct_wins} || 0) < ($self->{map_ts_wins} || 0) ? 3 : 2;
+	# Use the same bounded round window as score-based ATB, not cumulative map
+	# totals, so reconnect placement follows the live balance decision.
+	my $score_ct_wins = $self->{ba_ct_wins} || 0;
+	my $score_ts_wins = $self->{ba_ts_wins} || 0;
+	my $score_lead = abs($score_ct_wins - $score_ts_wins);
+	my $score_losing_team = $score_ct_wins < $score_ts_wins ? 3 : 2;
 	if ($kd_locked && $score_lead > ($self->{balance_max_wins} || 0)) {
 		# A high-KD player must not be able to choose the map's winning side
 		# while ATB is trying to close a meaningful lead.
@@ -1691,9 +1695,17 @@ sub analyze_teams
 	my $count_as_skill_balance = 0;
 	my $count_gap = abs($ct_count - $ts_count);
 	my %count_target_blockers;
+	my $one_player_score_correction = $atomic_round_end
+		&& $can_balance_by_score
+		&& ($self->{map_rounds} || 0) >= ($self->{balance_start_rounds} || 0)
+		&& ($self->{ba_last_swap} || 0) <= 0
+		&& (($ct_underperforming && $ts_count > $ct_count)
+			|| ($ts_underperforming && $ct_count > $ts_count));
 
-	if ($ct_count + 1 < $ts_count) {
-		$needed_players = floor( ($ts_count - $ct_count) / 2);
+	if ($ct_count + 1 < $ts_count
+		|| ($one_player_score_correction && $ct_underperforming && $ts_count > $ct_count)) {
+		$needed_players = $ts_count - $ct_count > 1
+			? floor( ($ts_count - $ct_count) / 2) : 1;
 		if ($score_aware_count_correction && $ct_underperforming) {
 			my @bots = $bot_fill_mode ? grep { $_->[9] } @ts_players : ();
 			@bots = sort { $a->[6] <=> $b->[6] } @bots;
@@ -1713,8 +1725,10 @@ sub analyze_teams
 				@possible_players = sort { $a->[6] <=> $b->[6]} @ts_players;
 			}
 		}
-	} elsif ($ts_count + 1 < $ct_count) {
-		$needed_players = floor( ($ct_count - $ts_count) / 2);
+	} elsif ($ts_count + 1 < $ct_count
+		|| ($one_player_score_correction && $ts_underperforming && $ct_count > $ts_count)) {
+		$needed_players = $ct_count - $ts_count > 1
+			? floor( ($ct_count - $ts_count) / 2) : 1;
 		if ($score_aware_count_correction && $ts_underperforming) {
 			my @bots = $bot_fill_mode ? grep { $_->[9] } @ct_players : ();
 			@bots = sort { $a->[6] <=> $b->[6] } @bots;
@@ -1770,13 +1784,16 @@ sub analyze_teams
 	my $count_target_blocked = $needed_players > 0;
 
 	if ($action_done) {
+		my $status = $one_player_score_correction && $count_gap == 1
+			? "Swap queued: winning side surplus 1; score lead > $max_score_lead"
+			: "Swap queued: team gap $count_gap";
 		my $remaining_reason = $count_target_blocked
 			? "; more targets blocked: "
 				. (join(", ", sort keys %count_target_blockers) || "no eligible target")
 			: "";
 		$self->debug_team_balance_status(
 			$ct_count, $ts_count, $ct_wins, $ts_wins,
-			"Swap queued: team gap $count_gap$remaining_reason",
+			"$status$remaining_reason",
 		);
 		return;
 	}

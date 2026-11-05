@@ -212,6 +212,16 @@ class HLXATBSimulationTests(unittest.TestCase):
         commencing = events.split('if ($action eq "Game_Commencing")', 1)[1].split("$g_servers{$s_addr}->updateDB()", 1)[0]
         self.assertIn("reset_team_balance()", commencing)
 
+    def test_kd_locked_reconnect_uses_current_preferred_team(self):
+        plugin = (ROOT / "src/sourcemod/scripting/jointeamcontrol.sp").read_text()
+        response = plugin.split("public void JoinPolicyResponse", 1)[1].split(
+            "void ScheduleTeamCheck", 1
+        )[0]
+        self.assertIn("gHadMapAssignment[client] && kdLocked", response)
+        self.assertIn("gLockedTeam[client] != preferredTeam", response)
+        self.assertIn("gHadMapAssignment[client] = false", response)
+        self.assertIn("EnforcePreferredTeam(client)", response)
+
     def test_fill_bot_join_after_human_leave_cancels_an_unneeded_swap(self):
         players = [
             Player("human:0", 2, False, 50),

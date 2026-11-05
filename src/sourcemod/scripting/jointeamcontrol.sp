@@ -613,6 +613,17 @@ public void JoinPolicyResponse(int command, int payload, int client, DataPack &d
 	{
 		ShowLockInfoIfNeeded(client);
 	}
+	// Reconnects normally restore their map-locked team. A KD-locked player is
+	// the exception: refresh that lock from the backend's current balance policy
+	// so reconnecting cannot retain a team that ATB now prefers them to leave.
+	if (gHadMapAssignment[client] && kdLocked
+		&& IsValidPreferredTeam(preferredTeam)
+		&& gLockedTeam[client] != preferredTeam)
+	{
+		gHadMapAssignment[client] = false;
+		gMapTeamLock[client] = false;
+		gLockedTeam[client] = 0;
+	}
 	if (gAllowPlacement[client] && !gHadMapAssignment[client]
 		&& IsValidPreferredTeam(preferredTeam))
 	{

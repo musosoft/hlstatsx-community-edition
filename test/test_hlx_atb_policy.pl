@@ -265,6 +265,8 @@ is($server->apply_team_balance_config_defaults({ BalanceAnalyzeRounds => "0" })-
 	$server->{jtc_threshold_checked_at} = 0;
 	$server->{map_ct_wins} = 4;
 	$server->{map_ts_wins} = 8;
+	$server->{ba_ct_wins} = 4;
+	$server->{ba_ts_wins} = 8;
 	my $joiner = {
 		uniqueid => "STEAM_0:1:42", userid => 7, is_bot => 0,
 		total_kills => 44, lifetime_deaths => 22, team => "TERRORIST",
@@ -366,8 +368,12 @@ is($server->apply_team_balance_config_defaults({ BalanceAnalyzeRounds => "0" })-
 	$server->{play_game} = 0;
 	$server->{jtc_enabled_checked_at} = 0;
 	$server->{jtc_threshold_checked_at} = 0;
-	$server->{map_ct_wins} = 4;
-	$server->{map_ts_wins} = 8;
+	# Deliberately disagree with cumulative map totals: join placement must use
+	# the same bounded round window that score-based ATB uses.
+	$server->{map_ct_wins} = 8;
+	$server->{map_ts_wins} = 4;
+	$server->{ba_ct_wins} = 4;
+	$server->{ba_ts_wins} = 8;
 	$server->{srv_players} = {
 		1 => { uniqueid => "STEAM_0:0:1", userid => 1, is_bot => 0, team => "CT" },
 		2 => { uniqueid => "STEAM_0:1:2", userid => 2, is_bot => 0, team => "CT" },
@@ -377,7 +383,7 @@ is($server->apply_team_balance_config_defaults({ BalanceAnalyzeRounds => "0" })-
 	};
 	my $policy = $server->get_join_team_policy($server->{srv_players}{5});
 	is_deeply($policy, { preferred_team => 3, kd_locked => 1 },
-		"a high-KD player is kept off the winning side even when it has more open human slots");
+		"a high-KD player follows the losing recent-score window even when map totals disagree and that side has more players");
 }
 {
 	no warnings qw(redefine once);
@@ -1283,6 +1289,66 @@ $server->analyze_teams(1);
 acknowledge_test_swaps($server);
 is_deeply($server->{test_switches}, [4],
 	"count correction gives the losing smaller team the strongest eligible player in one transfer");
+
+$server = new_server();
+$server->{num_trackable_players} = 9;
+$server->{numplayers} = 9;
+$server->{balance_min_players} = 8;
+$server->{balance_rounds_delay} = 3;
+$server->{balance_start_rounds} = 7;
+$server->{balance_max_wins} = 2;
+$server->{switch_admins} = 0;
+$server->{balance_switch_only_dead} = 0;
+$server->{ba_ct_wins} = 5;
+$server->{ba_ts_wins} = 1;
+%balanced_roster = ();
+for my $index (1 .. 5) {
+	$balanced_roster{"ct$index"} = balance_player($index, "CT", 0, $index * 10);
+}
+for my $index (6 .. 9) {
+	$balanced_roster{"t$index"} = balance_player($index, "TERRORIST", 0, 0);
+}
+$server->{srv_players} = \%balanced_roster;
+my @one_surplus_diagnostics;
+{
+	no warnings qw(redefine once);
+	local *HLstats_Server::debug_team_balance_status = sub {
+		push @one_surplus_diagnostics, $_[5];
+	};
+	$server->analyze_teams(1, 0, 1);
+}
+acknowledge_test_swaps($server);
+is_deeply($server->{test_switches}, [5],
+	"at the score trigger, a one-player surplus on the winning side sends one strong player to the losing side");
+like($one_surplus_diagnostics[-1], qr/winning side surplus 1; score lead > 2/,
+	"admin diagnostic identifies the one-player transfer's score-trigger reason");
+is($server->{ba_last_swap}, 3,
+	"a one-player score-aware transfer starts the existing three-round cooldown");
+$server->analyze_teams(1, 0, 1);
+is(scalar @{$server->{test_switches}}, 1,
+	"a one-player score imbalance does not cause consecutive round-end transfers");
+
+$server = new_server();
+$server->{num_trackable_players} = 9;
+$server->{numplayers} = 9;
+$server->{balance_min_players} = 8;
+$server->{balance_start_rounds} = 7;
+$server->{balance_max_wins} = 2;
+$server->{switch_admins} = 0;
+$server->{balance_switch_only_dead} = 0;
+$server->{ba_ct_wins} = 3;
+$server->{ba_ts_wins} = 1;
+%balanced_roster = ();
+for my $index (1 .. 5) {
+	$balanced_roster{"ct$index"} = balance_player($index, "CT", 0, $index * 10);
+}
+for my $index (6 .. 9) {
+	$balanced_roster{"t$index"} = balance_player($index, "TERRORIST", 0, 0);
+}
+$server->{srv_players} = \%balanced_roster;
+$server->analyze_teams(1, 0, 1);
+is(scalar @{$server->{test_switches} || []}, 0,
+	"a one-player surplus alone does not trigger count correction below the score threshold");
 
 $server = new_server();
 $server->{num_trackable_players} = 2;
