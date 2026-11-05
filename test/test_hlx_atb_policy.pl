@@ -125,8 +125,8 @@ sub new_server {
 		minplayers => 4,
 		num_trackable_players => 0,
 		numplayers => 0,
-		balance_min_players => 10,
-		balance_max_wins => 3,
+		balance_min_players => 8,
+		balance_max_wins => 2,
 		maxplayers => 32,
 		srv_players => {},
 		ba_swapped_players => {},
@@ -176,8 +176,8 @@ is_deeply(
 		BalanceStartRounds => "3",
 		BalanceRoundsDelay => 3,
 		BalanceAnalyzeRounds => 7,
-		BalanceMaxWins => 3,
-		BalanceMinPlayers => 10,
+		BalanceMaxWins => 2,
+		BalanceMinPlayers => 8,
 		BalanceIgnoreBots => 0,
 	},
 	"empty DB balance settings inherit documented defaults while configured values remain intact",
@@ -203,6 +203,19 @@ is_deeply($explicit_balance, {
 }, "explicit zero and bot-ignore settings are preserved");
 is($server->apply_team_balance_config_defaults({ BalanceAnalyzeRounds => "0" })->{BalanceAnalyzeRounds}, 7,
 	"non-positive analysis window falls back instead of causing modulo by zero");
+{
+	no warnings qw(redefine once);
+	my @commands;
+	local *HLstats_Server::dorcon = sub { push @commands, $_[1]; return "ok" };
+	$server->{player_events} = 1;
+	$server->{player_admin_command} = "sm_chat";
+	$server->debug_message("\x04HLstatsX:CE - ATB\x01 CT 8 | T 8 | score 12-9");
+	is($commands[0], "sm_chat \x04HLstatsX:CE - ATB\x01 CT 8 | T 8 | score 12-9",
+		"ATB diagnostic uses the concise green prefix through admin-only chat");
+	$server->{player_events} = 0;
+	$server->debug_message("should not be sent");
+	is(scalar @commands, 1, "ATB diagnostic stays disabled for non-admin/public chat");
+}
 {
 	no warnings qw(redefine once);
 	my @commands;
@@ -1061,8 +1074,8 @@ is(scalar(grep { $_->{team} eq "TERRORIST" } values %{$server->{srv_players}}), 
 $server = new_server();
 $server->{map_rounds} = 12;
 $server->{num_trackable_players} = 6;
-$server->{numplayers} = 6;
-$server->{balance_min_players} = 6;
+$server->{numplayers} = 7;
+$server->{balance_min_players} = 8;
 $server->{minplayers} = 6;
 $server->{balance_analyze_rounds} = 7;
 $server->{balance_start_rounds} = 7;
@@ -1082,13 +1095,13 @@ $server->{srv_players} = \%balanced_roster;
 $server->analyze_teams();
 acknowledge_test_swaps($server);
 is(scalar @{$server->{test_switches} || []}, 0,
-	"population at the configured ATB threshold suppresses score-based swaps");
+	"population below the configured ATB threshold suppresses score-based swaps");
 
 $server = new_server();
 $server->{map_rounds} = 12;
-$server->{num_trackable_players} = 10;
-$server->{numplayers} = 11;
-$server->{balance_min_players} = 10;
+$server->{num_trackable_players} = 8;
+$server->{numplayers} = 8;
+$server->{balance_min_players} = 8;
 $server->{minplayers} = 8;
 $server->{balance_analyze_rounds} = 7;
 $server->{balance_start_rounds} = 7;
@@ -1108,7 +1121,7 @@ $server->{srv_players} = \%balanced_roster;
 $server->analyze_teams();
 acknowledge_test_swaps($server);
 is(scalar @{$server->{test_switches}}, 2,
-	"above BalanceMinPlayers, score balancing performs its planned paired transfer");
+	"at eight players, score balancing performs its planned paired transfer");
 is_deeply([sort { $a <=> $b } @{$server->{test_switches}}], [2, 4],
 	"score balance excludes the strongest winning player and selects the weakest eligible opponent");
 like($server->{test_announcements}[-1], qr/^HLstatsX:CE - ATB - \[CT\].+ ⇄ \[T\].+reduce the team score lead\./,
@@ -1126,29 +1139,48 @@ ok(!(grep {
 $server = new_server();
 $server->{map_rounds} = 12;
 $server->{numplayers} = 11;
-$server->{balance_min_players} = 10;
+$server->{balance_min_players} = 8;
+$server->{balance_rounds_delay} = 3;
 $server->{balance_analyze_rounds} = 7;
 $server->{balance_start_rounds} = 7;
-$server->{balance_max_wins} = 3;
+$server->{balance_max_wins} = 2;
 $server->{balance_ignore_bots} = 0;
 $server->{switch_admins} = 0;
 $server->{balance_switch_only_dead} = 0;
 $server->{ba_ct_wins} = 5;
-$server->{ba_ts_wins} = 8;
+$server->{ba_ts_wins} = 7;
 %balanced_roster = ();
 for my $index (1 .. 3) {
 	$balanced_roster{"t$index"} = balance_player($index, "TERRORIST", 0, 20 - $index);
 	$balanced_roster{"ct$index"} = balance_player($index + 3, "CT", 0, $index);
 }
 $server->{srv_players} = \%balanced_roster;
-$server->analyze_teams();
-is(scalar @{$server->{test_switches} || []}, 0,
-	"a lead equal to the configured three-win maximum does not trigger score balancing");
-$server->{ba_ts_wins} = 9;
-$server->analyze_teams();
-acknowledge_test_swaps($server);
-is(scalar @{$server->{test_switches}}, 2,
-	"score balancing rechecks and starts once the lead exceeds the three-win maximum");
+{
+	no warnings qw(redefine once);
+	my @diagnostics;
+	local *HLstats_Server::debug_message = sub { push @diagnostics, $_[1] };
+	$server->analyze_teams();
+	is(scalar @{$server->{test_switches} || []}, 0,
+		"a two-round lead does not trigger score balancing with a three-round trigger");
+	like($diagnostics[-1], qr/No swap: lead below 3/,
+		"admin diagnostic explains that the score lead has not reached the trigger");
+	$server->{ba_ts_wins} = 8;
+	$server->analyze_teams();
+	acknowledge_test_swaps($server);
+	is(scalar @{$server->{test_switches}}, 2,
+		"score balancing catches up at a three-round lead");
+	like($diagnostics[-1], qr/Swap queued: score lead > 2/,
+		"admin diagnostic explains the score rule that queued the pair");
+	is($server->{ba_last_swap}, 3,
+		"the faster trigger still starts the existing three-round post-swap cooldown");
+	$server->analyze_teams();
+	is($server->{ba_last_swap}, 2,
+		"the first subsequent round remains blocked by that unchanged cooldown");
+	like($diagnostics[-1], qr/No swap: cooldown 2 rounds/,
+		"admin diagnostic gives the remaining cooldown before balancing can recur");
+	is(scalar @{$server->{test_switches}}, 2,
+		"the lower score trigger does not allow another swap during cooldown");
+}
 
 $server = new_server();
 $server->{map_rounds} = 12;
@@ -1340,6 +1372,31 @@ $server->{srv_players} = \%balanced_roster;
 acknowledge_test_swaps($server);
 is_deeply([sort { $a <=> $b } @{$server->{test_switches}}], [2, 5],
 	"score balancing excludes protected admins and chooses the next eligible player");
+
+$server = new_server();
+$server->{numplayers} = 11;
+$server->{balance_min_players} = 8;
+$server->{map_rounds} = 12;
+$server->{balance_start_rounds} = 7;
+$server->{balance_max_wins} = 2;
+$server->{balance_switch_only_dead} = 0;
+$server->{ba_ct_wins} = 0;
+$server->{ba_ts_wins} = 7;
+%balanced_roster = ();
+for my $index (1 .. 3) {
+	$balanced_roster{"t$index"} = balance_player($index, "TERRORIST", 0, 20);
+	$balanced_roster{"ct$index"} = balance_player($index + 3, "CT", 0, 0);
+}
+$server->{srv_players} = \%balanced_roster;
+{
+	no warnings qw(redefine once);
+	my @diagnostics;
+	local *HLstats_Server::is_admin = sub { return 1 };
+	local *HLstats_Server::debug_message = sub { push @diagnostics, $_[1] };
+	$server->analyze_teams(1, 0, 1);
+	like($diagnostics[-1], qr/No swap: no pair: admin protection, strongest player protected/,
+		"admin diagnostic names the exact exclusions that prevented a score pair");
+}
 
 {
 	local $::g_stdin = 1;

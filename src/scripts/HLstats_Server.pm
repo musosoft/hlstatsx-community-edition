@@ -150,8 +150,8 @@ sub new
 	$self->{balance_start_rounds} = 0;
 	$self->{balance_rounds_delay} = 0;
 	$self->{balance_analyze_rounds} = 0;
-	$self->{balance_max_wins} = 3;
-	$self->{balance_min_players} = 10;
+	$self->{balance_max_wins} = 2;
+	$self->{balance_min_players} = 8;
 	
 	# Messaging commands
 	$self->{show_stats}                  	= 0;
@@ -878,8 +878,8 @@ sub apply_team_balance_config_defaults
 		BalanceStartRounds => 7,
 		BalanceRoundsDelay => 3,
 		BalanceAnalyzeRounds => 7,
-		BalanceMaxWins => 3,
-		BalanceMinPlayers => 10,
+		BalanceMaxWins => 2,
+		BalanceMinPlayers => 8,
 		BalanceIgnoreBots => 0,
 	);
 
@@ -1549,9 +1549,18 @@ sub debug_message
 	my ($self, $message) = @_;
 
 	if ($self->{player_events} == 1 && $self->{player_admin_command} ne "") {
-		$cmd_str = $self->{player_admin_command}." [DEBUG] $message";
+		$cmd_str = $self->{player_admin_command}." $message";
 		$self->dorcon($cmd_str);
 	}
+}
+
+sub debug_team_balance_status
+{
+	my ($self, $ct_count, $ts_count, $ct_wins, $ts_wins, $status) = @_;
+	$self->debug_message(sprintf(
+		"\x04HLstatsX:CE - ATB\x01 CT %d T %d | score %d-%d | %s",
+		$ct_count, $ts_count, $ct_wins, $ts_wins, $status,
+	));
 }
 
 sub analyze_teams
@@ -1635,6 +1644,7 @@ sub analyze_teams
 		my ($live_ct_count, $live_ts_count, $live_fill_mode) = $self->get_live_team_counts();
 		if (!defined($live_ct_count) || !defined($live_ts_count) || !defined($live_fill_mode)) {
 			&::printEvent("TEAMS", "ATB live team counts unavailable; skipping this round-end window", 1);
+			$self->debug_message("\x04HLstatsX:CE - ATB\x01 No swap: live team counts unavailable");
 			return;
 		}
 		$bot_fill_mode = $live_fill_mode;
@@ -1648,8 +1658,6 @@ sub analyze_teams
 
 	&::printEvent("TEAM", "Checking Teams", 1);
 
-	$self->debug_message("HLstatsX:CE - ATB: CT ($ct_count) $ct_kills:$ct_deaths  [$ct_wins - $ts_wins] $ts_kills:$ts_deaths ($ts_count) TS");
-
 	my $action_done = 0;
 	# At or below the configured population threshold only correct team counts;
 	# round-end score pairs are dispatched as one SourceMod transaction.
@@ -1657,10 +1665,10 @@ sub analyze_teams
 		? $ct_count + $ts_count
 		: ($self->{numplayers} || $self->{num_trackable_players} || 0);
 	my $balance_min_players = defined($self->{balance_min_players})
-		? $self->{balance_min_players} : 10;
+		? $self->{balance_min_players} : 8;
 	my $can_balance_by_score = (!$allow_alive || $atomic_round_end)
-		&& $balance_population > $balance_min_players;
-	my $score_aware_count_correction = $balance_population > $balance_min_players;
+		&& $balance_population >= $balance_min_players;
+	my $score_aware_count_correction = $balance_population >= $balance_min_players;
 	my ($ct_excess, $ts_excess, $has_map_bias) = (0, 0, 0);
 	if ($can_balance_by_score) {
 		($ct_excess, $ts_excess, $has_map_bias) = $self->get_map_adjusted_team_excess($ct_wins, $ts_wins);
@@ -1681,6 +1689,8 @@ sub analyze_teams
 	my $needed_players = 0;
 	my @possible_players = ();
 	my $count_as_skill_balance = 0;
+	my $count_gap = abs($ct_count - $ts_count);
+	my %count_target_blockers;
 
 	if ($ct_count + 1 < $ts_count) {
 		$needed_players = floor( ($ts_count - $ct_count) / 2);
@@ -1730,10 +1740,20 @@ sub analyze_teams
 			last;
 		}
 
-		if ((@{$entry}[7] == 0 && $self->{balance_switch_only_dead} && !$allow_alive)
-			|| ($self->is_admin(@{$entry}[1]) == 1 && !$self->{switch_admins})
-			|| $self->balance_player_was_swapped($entry)
-			|| $self->balance_player_swap_pending($entry)) {
+		if (@{$entry}[7] == 0 && $self->{balance_switch_only_dead} && !$allow_alive) {
+			$count_target_blockers{"dead-only"} = 1;
+			next;
+		}
+		if ($self->is_admin(@{$entry}[1]) == 1 && !$self->{switch_admins}) {
+			$count_target_blockers{"admin protection"} = 1;
+			next;
+		}
+		if ($self->balance_player_was_swapped($entry)) {
+			$count_target_blockers{"map swap lock"} = 1;
+			next;
+		}
+		if ($self->balance_player_swap_pending($entry)) {
+			$count_target_blockers{"swap pending"} = 1;
 			next;
 		}
 		if ($self->request_balance_player_swap(
@@ -1743,26 +1763,57 @@ sub analyze_teams
 			$self->messageAll("HLstatsX:CE - ATB - " . @{$entry}[0] . " switched [" . @{$entry}[3] . " → " . $destination_team . "] to balance team sizes.", 0, 1);
 			$action_done++;
 			$needed_players--;
+		} else {
+			$count_target_blockers{"swap dispatch failed"} = 1;
 		}
 	}
+	my $count_target_blocked = $needed_players > 0;
 
 	if ($action_done) {
+		my $remaining_reason = $count_target_blocked
+			? "; more targets blocked: "
+				. (join(", ", sort keys %count_target_blockers) || "no eligible target")
+			: "";
+		$self->debug_team_balance_status(
+			$ct_count, $ts_count, $ct_wins, $ts_wins,
+			"Swap queued: team gap $count_gap$remaining_reason",
+		);
 		return;
 	}
 	# End of balance based on team count.
 
 	# Balance based on frags.
-	if (!$can_balance_by_score || $self->{ba_last_swap} > 0 || $self->{map_rounds} < $self->{balance_start_rounds}) {
+	my $score_gate_reason = "";
+	if (!$can_balance_by_score) {
+		$score_gate_reason = $balance_population < $balance_min_players
+			? "players $balance_population/$balance_min_players"
+			: "waiting for round end";
+	} elsif ($self->{ba_last_swap} > 0) {
+		$score_gate_reason = "cooldown $self->{ba_last_swap} rounds";
+	} elsif ($self->{map_rounds} < $self->{balance_start_rounds}) {
+		$score_gate_reason = "map round $self->{map_rounds}/$self->{balance_start_rounds}";
+	}
+	if ($score_gate_reason ne "") {
+		my $count_note = $count_target_blocked
+			? "; count target blocked: "
+				. (join(", ", sort keys %count_target_blockers) || "no eligible target")
+			: "";
+		$self->debug_team_balance_status(
+			$ct_count, $ts_count, $ct_wins, $ts_wins,
+			"No swap: $score_gate_reason$count_note",
+		);
 		return;
 	}
 
 	my $need_ct = 0;
 	my $need_ts = 0;
+	my $protected_score_leader = 0;
 	if ($ct_underperforming) {
 		$need_ct = $ct_count < $ts_count ? 0 : 1;
 		$need_ts = 1;
 
 		@ts_players = sort { $b->[6] <=> $a->[6]} @ts_players;  # best player
+		$protected_score_leader = 1 if @ts_players;
 		shift(@ts_players); # remove first best
 		@ct_players = sort { $a->[6] <=> $b->[6]} @ct_players;  # worst player
 	} elsif ($ts_underperforming) {
@@ -1771,8 +1822,10 @@ sub analyze_teams
 
 		@ts_players = sort { $a->[6] <=> $b->[6]} @ts_players;  # worst player
 		@ct_players = sort { $b->[6] <=> $a->[6]} @ct_players;  # best player
+		$protected_score_leader = 1 if @ct_players;
 		shift(@ct_players); # remove first best
 	}
+	my $score_trigger_met = $ct_underperforming || $ts_underperforming;
 	if ($atomic_round_end && ($ct_underperforming || $ts_underperforming)) {
 		# Score balance is a paired exchange even if team sizes differ by one;
 		# count corrections above remain their own validated single-player path.
@@ -1781,13 +1834,27 @@ sub analyze_teams
 
 	my @ct_switch_player = ();
 	my @ts_switch_player = ();
+	my %score_target_blockers;
 
 	foreach my $entry (@ct_players) {
-		if ($self->balance_player_was_swapped($entry)
-			|| $self->balance_player_swap_pending($entry)
-			|| ($bot_fill_mode && $entry->[9])
-			|| (@{$entry}[7] == 0 && $self->{balance_switch_only_dead} && !$allow_alive)
-			|| ($self->is_admin(@{$entry}[1]) == 1 && !$self->{switch_admins})) {
+		if ($self->balance_player_was_swapped($entry)) {
+			$score_target_blockers{"map swap lock"} = 1;
+			next;
+		}
+		if ($self->balance_player_swap_pending($entry)) {
+			$score_target_blockers{"swap pending"} = 1;
+			next;
+		}
+		if ($bot_fill_mode && $entry->[9]) {
+			$score_target_blockers{"fill-bot protection"} = 1;
+			next;
+		}
+		if (@{$entry}[7] == 0 && $self->{balance_switch_only_dead} && !$allow_alive) {
+			$score_target_blockers{"dead-only rule"} = 1;
+			next;
+		}
+		if ($self->is_admin(@{$entry}[1]) == 1 && !$self->{switch_admins}) {
+			$score_target_blockers{"admin protection"} = 1;
 			next;
 		}
 
@@ -1796,11 +1863,24 @@ sub analyze_teams
 	}
 
 	foreach my $entry (@ts_players) {
-		if ($self->balance_player_was_swapped($entry)
-			|| $self->balance_player_swap_pending($entry)
-			|| ($bot_fill_mode && $entry->[9])
-			|| (@{$entry}[7] == 0 && $self->{balance_switch_only_dead} && !$allow_alive)
-			|| ($self->is_admin(@{$entry}[1]) == 1 && !$self->{switch_admins})) {
+		if ($self->balance_player_was_swapped($entry)) {
+			$score_target_blockers{"map swap lock"} = 1;
+			next;
+		}
+		if ($self->balance_player_swap_pending($entry)) {
+			$score_target_blockers{"swap pending"} = 1;
+			next;
+		}
+		if ($bot_fill_mode && $entry->[9]) {
+			$score_target_blockers{"fill-bot protection"} = 1;
+			next;
+		}
+		if (@{$entry}[7] == 0 && $self->{balance_switch_only_dead} && !$allow_alive) {
+			$score_target_blockers{"dead-only rule"} = 1;
+			next;
+		}
+		if ($self->is_admin(@{$entry}[1]) == 1 && !$self->{switch_admins}) {
+			$score_target_blockers{"admin protection"} = 1;
 			next;
 		}
 
@@ -1821,23 +1901,84 @@ sub analyze_teams
 		}
 		if ($ct_requested && $ts_requested) {
 			$self->messageAll("HLstatsX:CE - ATB - [CT] " . $ct_switch_player[0] . " ⇄ [T] " . $ts_switch_player[0] . " switched to reduce the team score lead.", 0, 1);
+			$self->debug_team_balance_status(
+				$ct_count, $ts_count, $ct_wins, $ts_wins,
+				"Swap queued: score lead " . ($has_map_bias ? "map-adjusted > " : "> ") . $max_score_lead,
+			);
 		} elsif ($ct_requested) {
 			$self->messageAll("HLstatsX:CE - ATB - " . $ct_switch_player[0] . " switched [CT → T] to reduce the team score lead.", 0, 1);
+			$self->debug_team_balance_status(
+				$ct_count, $ts_count, $ct_wins, $ts_wins,
+				"Swap queued: score lead > $max_score_lead",
+			);
 		} elsif ($ts_requested) {
 			$self->messageAll("HLstatsX:CE - ATB - " . $ts_switch_player[0] . " switched [T → CT] to reduce the team score lead.", 0, 1);
+			$self->debug_team_balance_status(
+				$ct_count, $ts_count, $ct_wins, $ts_wins,
+				"Swap queued: score lead > $max_score_lead",
+			);
+		} else {
+			$self->debug_team_balance_status(
+				$ct_count, $ts_count, $ct_wins, $ts_wins, "No swap: dispatch failed",
+			);
 		}
-		return if !$ct_requested && !$ts_requested;
+		return;
 	} elsif ($atomic_round_end) {
 		# Round-end score balancing never falls back to an unpaired transfer.
+		my $reason;
+		if ($score_trigger_met) {
+			my @blockers = sort keys %score_target_blockers;
+			push @blockers, "strongest player protected" if $protected_score_leader;
+			push @blockers, "no eligible pair" if !@blockers;
+			$reason = "no pair: " . join(", ", @blockers);
+		} else {
+			$reason = $has_map_bias
+				? "map-adjusted lead <= $max_score_lead"
+				: "lead below " . ($max_score_lead + 1);
+		}
+		$self->debug_team_balance_status(
+			$ct_count, $ts_count, $ct_wins, $ts_wins, "No swap: $reason",
+		);
 		return;
 	} elsif ($need_ct && @ct_switch_player && !$need_ts) {
-		return if !$self->request_balance_player_swap(\@ct_switch_player, 1, $allow_alive);
+		if (!$self->request_balance_player_swap(\@ct_switch_player, 1, $allow_alive)) {
+			$self->debug_team_balance_status(
+				$ct_count, $ts_count, $ct_wins, $ts_wins, "No swap: dispatch failed",
+			);
+			return;
+		}
 		$self->messageAll("HLstatsX:CE - ATB - " . $ct_switch_player[0] . " switched [CT → T] to reduce the team score lead.", 0, 1);
+		$self->debug_team_balance_status(
+			$ct_count, $ts_count, $ct_wins, $ts_wins,
+			"Swap queued: score lead > $max_score_lead",
+		);
 	} elsif ($need_ts && @ts_switch_player && !$need_ct) {
-		return if !$self->request_balance_player_swap(\@ts_switch_player, 1, $allow_alive);
+		if (!$self->request_balance_player_swap(\@ts_switch_player, 1, $allow_alive)) {
+			$self->debug_team_balance_status(
+				$ct_count, $ts_count, $ct_wins, $ts_wins, "No swap: dispatch failed",
+			);
+			return;
+		}
 		$self->messageAll("HLstatsX:CE - ATB - " . $ts_switch_player[0] . " switched [T → CT] to reduce the team score lead.", 0, 1);
+		$self->debug_team_balance_status(
+			$ct_count, $ts_count, $ct_wins, $ts_wins,
+			"Swap queued: score lead > $max_score_lead",
+		);
 	} else {
-		# No players found or needed to switch.
+		my $reason;
+		if ($score_trigger_met) {
+			my @blockers = sort keys %score_target_blockers;
+			push @blockers, "strongest player protected" if $protected_score_leader;
+			push @blockers, "no eligible target" if !@blockers;
+			$reason = "no target: " . join(", ", @blockers);
+		} else {
+			$reason = $has_map_bias
+				? "map-adjusted lead <= $max_score_lead"
+				: "lead below " . ($max_score_lead + 1);
+		}
+		$self->debug_team_balance_status(
+			$ct_count, $ts_count, $ct_wins, $ts_wins, "No swap: $reason",
+		);
 		return;
 	}
 
