@@ -2889,7 +2889,7 @@ swap_player_internal(player_index, bool:allow_alive, bool:is_atb)
             PrintCenterText(player_index, "[HlstatsX] You were switched to balance team! You are now T.");
 
             CS_SwitchTeam(player_index, CS_TEAM_T);
-            if (allow_alive && was_alive)
+            if (allow_alive && was_alive && !is_atb)
             {
                 CS_RespawnPlayer(player_index);
             }
@@ -2917,7 +2917,7 @@ swap_player_internal(player_index, bool:allow_alive, bool:is_atb)
             PrintCenterText(player_index, "[HlstatsX] You were switched to balance team! You are now CT.");
 
             CS_SwitchTeam(player_index, CS_TEAM_CT);
-            if (allow_alive && was_alive)
+            if (allow_alive && was_alive && !is_atb)
             {
                 CS_RespawnPlayer(player_index);
             }

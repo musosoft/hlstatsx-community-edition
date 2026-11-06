@@ -561,7 +561,7 @@ is($fallback_server->{ba_balance_deadline}, 2004,
 		"alive capability is explicitly tagged as round-end-only at the server boundary");
 	$swap_server->switch_player(42, "dead candidate", 0);
 	unlike($commands[1], qr/round_end/,
-		"ordinary swap requests retain the dead-only plugin behavior");
+		"non-round-end swaps do not enable the alive target path");
 	ok($swap_server->switch_players_round_end(42, 43),
 		"paired score swap uses the dedicated SourceMod transaction command");
 	like($commands[2], qr/^hlx_sm_swap\s+"42"\s+"43"\s+round_end_pair$/,
@@ -973,6 +973,10 @@ for my $index (1 .. 5) {
 	$alive_two_v_five{"ts$index"}{is_dead} = 0;
 }
 $server->{srv_players} = \%alive_two_v_five;
+$server->analyze_teams();
+acknowledge_test_swaps($server);
+is(scalar @{$server->{test_switches}}, 0,
+	"dead-only policy rejects living targets outside the round-end override");
 $server->analyze_teams(1);
 acknowledge_test_swaps($server);
 is(scalar @{$server->{test_switches}}, 1,
@@ -1231,6 +1235,8 @@ for my $index (1 .. 3) {
 	$balanced_roster{"t$index"} = balance_player($index, "TERRORIST", 0, 24 - ($index * 4));
 	$balanced_roster{"ct$index"} = balance_player($index + 3, "CT", 0, ($index - 1) * 4);
 }
+$balanced_roster{"t2"}{is_dead} = 0;
+$balanced_roster{"ct1"}{is_dead} = 0;
 $server->{srv_players} = \%balanced_roster;
 my @pair_request;
 {

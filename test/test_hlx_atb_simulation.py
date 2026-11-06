@@ -166,6 +166,8 @@ class HLXATBSimulationTests(unittest.TestCase):
             "sub bot_fill_roster_is_changing", 1
         )[0]
         self.assertIn("return if $self->{ba_round_active}", pending)
+        self.assertIn("if (@{$entry}[7] == 0 && $self->{balance_switch_only_dead} && !$allow_alive)", server)
+        self.assertIn("return 0 if !$allow_alive || $first->[3] eq $second->[3]", server)
         self.assertIn('$g_servers{$s_addr}->{ba_round_active} = 0', events)
         self.assertIn('$g_servers{$s_addr}->{ba_round_active} = 1', events)
         self.assertIn("note_balance_roster_change()", events)
