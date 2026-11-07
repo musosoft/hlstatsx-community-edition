@@ -96,7 +96,8 @@ sub main::quoteSQL {
 		return { active => 0, ct_rate => 0.5, ts_rate => 0.5, rounds => 0 };
 	};
 	*HLstats_Server::switch_player = sub {
-		my ($self, $userid) = @_;
+		my ($self, $userid, $name, $allow_alive, $allow_one_surplus) = @_;
+		push @{$self->{test_swap_modes}}, [$allow_alive || 0, $allow_one_surplus || 0];
 		for my $player (values %{$self->{srv_players}}) {
 			if ($player->{userid} == $userid) {
 				$player->{team} = $player->{team} eq "CT" ? "TERRORIST" : "CT";
@@ -559,12 +560,16 @@ is($fallback_server->{ba_balance_deadline}, 2004,
 		"round-end ATB can request an alive-capable swap");
 	like($commands[0], qr/hlx_sm_swap\s+"42"\s+round_end/,
 		"alive capability is explicitly tagged as round-end-only at the server boundary");
+	ok($swap_server->switch_player(42, "score surplus candidate", 1, 1),
+		"score-aware one-surplus swaps can use their dedicated validation mode");
+	like($commands[1], qr/hlx_sm_swap\s+"42"\s+round_end_score_surplus/,
+		"one-player score corrections explicitly preserve their wider final validation");
 	$swap_server->switch_player(42, "dead candidate", 0);
-	unlike($commands[1], qr/round_end/,
+	unlike($commands[2], qr/round_end/,
 		"non-round-end swaps do not enable the alive target path");
 	ok($swap_server->switch_players_round_end(42, 43),
 		"paired score swap uses the dedicated SourceMod transaction command");
-	like($commands[2], qr/^hlx_sm_swap\s+"42"\s+"43"\s+round_end_pair$/,
+	like($commands[3], qr/^hlx_sm_swap\s+"42"\s+"43"\s+round_end_pair$/,
 		"paired transaction preserves quoted userids and the round-end mode");
 }
 
@@ -1326,6 +1331,10 @@ my @one_surplus_diagnostics;
 acknowledge_test_swaps($server);
 is_deeply($server->{test_switches}, [5],
 	"at the score trigger, a one-player surplus on the winning side sends one strong player to the losing side");
+is_deeply($server->{test_swap_modes}, [[1, 1]],
+	"one-player score correction carries its explicit final-validation mode");
+like($server->{test_announcements}[-1], qr/requested .* for round-end team balancing/,
+	"round-end count correction is announced as requested, not already switched");
 like($one_surplus_diagnostics[-1], qr/winning side surplus 1; score lead > 2/,
 	"admin diagnostic identifies the one-player transfer's score-trigger reason");
 is($server->{ba_last_swap}, 3,

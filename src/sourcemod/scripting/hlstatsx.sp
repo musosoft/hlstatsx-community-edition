@@ -129,6 +129,7 @@ new bool:g_bRoundActive = true;
 new bool:g_bAtbSwapWindow;
 new bool:g_bAtbRosterChangedAfterRoundEnd;
 new g_iQueuedAtbSwapSerial[MAXPLAYERS+1];
+new bool:g_bQueuedAtbAllowOneSurplus[MAXPLAYERS+1];
 new g_iQueuedAtbPairSerialA;
 new g_iQueuedAtbPairSerialB;
 new g_iAtbExpectedTeamSerial[MAXPLAYERS+1];
@@ -348,7 +349,10 @@ public OnMapEnd()
 	g_bAtbSwapWindow = false;
 	g_hAtbSwapTimer = INVALID_HANDLE;
 	for (new i = 1; i <= MaxClients; i++)
+	{
 		g_iQueuedAtbSwapSerial[i] = 0;
+		g_bQueuedAtbAllowOneSurplus[i] = false;
+	}
 	g_iQueuedAtbPairSerialA = 0;
 	g_iQueuedAtbPairSerialB = 0;
 }
@@ -1898,7 +1902,10 @@ public Action:HLX_ATB_TeamCounts(args)
 	if (!g_bRoundActive)
 	{
 		for (new i = 1; i <= MaxClients; i++)
+		{
 			g_iQueuedAtbSwapSerial[i] = 0;
+			g_bQueuedAtbAllowOneSurplus[i] = false;
+		}
 		g_iQueuedAtbPairSerialA = 0;
 		g_iQueuedAtbPairSerialB = 0;
 		g_bAtbRosterChangedAfterRoundEnd = false;
@@ -1915,14 +1922,17 @@ stock void HLX_ATB_InvalidateQueuedSwaps(const char[] reason)
 
 	g_bAtbRosterChangedAfterRoundEnd = true;
 	for (new client = 1; client <= MaxClients; client++)
+	{
 		g_iQueuedAtbSwapSerial[client] = 0;
+		g_bQueuedAtbAllowOneSurplus[client] = false;
+	}
 	g_iQueuedAtbPairSerialA = 0;
 	g_iQueuedAtbPairSerialB = 0;
 	if (g_hAtbAudit != INVALID_HANDLE && GetConVarBool(g_hAtbAudit))
 		LogToGame("[HLX-ATB-AUDIT] discarded queued swaps reason=%s", reason);
 }
 
-stock bool:HLX_ATB_IsCountCorrectionValid(client)
+stock bool:HLX_ATB_IsCountCorrectionValid(client, bool:allow_one_surplus)
 {
 	if (client <= 0 || !IsClientInGame(client))
 		return false;
@@ -1941,8 +1951,9 @@ stock bool:HLX_ATB_IsCountCorrectionValid(client)
 	}
 
 	new client_team = GetClientTeam(client);
-	return (ct_count - t_count > 1 && client_team == CS_TEAM_CT)
-		|| (t_count - ct_count > 1 && client_team == CS_TEAM_T);
+	new minimum_gap = allow_one_surplus ? 1 : 2;
+	return (ct_count - t_count >= minimum_gap && client_team == CS_TEAM_CT)
+		|| (t_count - ct_count >= minimum_gap && client_team == CS_TEAM_T);
 }
 
 stock void HLX_ATB_ApplyCountCorrection(client)
@@ -2053,7 +2064,8 @@ public Action:hlx_sm_swap(args)
 		{
 			decl String:swap_window[32];
 			GetCmdArg(2, swap_window, sizeof(swap_window));
-			if (StrEqual(swap_window, "round_end", false))
+			new bool:allow_one_surplus = StrEqual(swap_window, "round_end_score_surplus", false);
+			if (StrEqual(swap_window, "round_end", false) || allow_one_surplus)
 			{
 				if (g_bRoundActive)
 				{
@@ -2064,7 +2076,7 @@ public Action:hlx_sm_swap(args)
 				if (g_bAtbSwapWindow)
 				{
 					if (g_bAtbRosterChangedAfterRoundEnd
-						|| !HLX_ATB_IsCountCorrectionValid(player_index))
+						|| !HLX_ATB_IsCountCorrectionValid(player_index, allow_one_surplus))
 					{
 						if (g_hAtbAudit != INVALID_HANDLE && GetConVarBool(g_hAtbAudit))
 							LogToGame("[HLX-ATB-AUDIT] refused userid=%d reason=stale_count_snapshot", client);
@@ -2077,6 +2089,7 @@ public Action:hlx_sm_swap(args)
 				else
 				{
 					g_iQueuedAtbSwapSerial[player_index] = GetClientSerial(player_index);
+					g_bQueuedAtbAllowOneSurplus[player_index] = allow_one_surplus;
 					if (g_hAtbAudit != INVALID_HANDLE && GetConVarBool(g_hAtbAudit))
 						LogToGame("[HLX-ATB-AUDIT] queued userid=%d reason=await_restart_window", client);
 				}
@@ -2097,6 +2110,7 @@ public Action:HLstatsX_Event_RoundStart(Handle:event, const String:name[], bool:
 	for (new i = 1; i <= MaxClients; i++)
 	{
 		g_iQueuedAtbSwapSerial[i] = 0;
+		g_bQueuedAtbAllowOneSurplus[i] = false;
 		g_iAtbExpectedTeamSerial[i] = 0;
 		g_iAtbExpectedTeam[i] = 0;
 	}
@@ -2151,7 +2165,10 @@ public Action:Timer_HLX_ATBSwapWindow(Handle:timer)
 	if (g_bAtbRosterChangedAfterRoundEnd)
 	{
 		for (new i = 1; i <= MaxClients; i++)
+		{
 			g_iQueuedAtbSwapSerial[i] = 0;
+			g_bQueuedAtbAllowOneSurplus[i] = false;
+		}
 		g_iQueuedAtbPairSerialA = 0;
 		g_iQueuedAtbPairSerialB = 0;
 		if (g_hAtbAudit != INVALID_HANDLE && GetConVarBool(g_hAtbAudit))
@@ -2168,7 +2185,10 @@ public Action:Timer_HLX_ATBSwapWindow(Handle:timer)
 			&& HLX_ATB_ApplyScorePair(first_client, second_client))
 		{
 			for (new i = 1; i <= MaxClients; i++)
+			{
 				g_iQueuedAtbSwapSerial[i] = 0;
+				g_bQueuedAtbAllowOneSurplus[i] = false;
+			}
 		}
 		else if (g_hAtbAudit != INVALID_HANDLE && GetConVarBool(g_hAtbAudit))
 			LogToGame("[HLX-ATB-AUDIT] refused queued score pair reason=stale_or_apply_failed");
@@ -2180,8 +2200,11 @@ public Action:Timer_HLX_ATBSwapWindow(Handle:timer)
 		if (serial == 0)
 			continue;
 		g_iQueuedAtbSwapSerial[i] = 0;
+		new bool:allow_one_surplus = g_bQueuedAtbAllowOneSurplus[i];
+		g_bQueuedAtbAllowOneSurplus[i] = false;
 		new client = GetClientFromSerial(serial);
-		if (client > 0 && IsClientInGame(client) && HLX_ATB_IsCountCorrectionValid(client))
+		if (client > 0 && IsClientInGame(client)
+			&& HLX_ATB_IsCountCorrectionValid(client, allow_one_surplus))
 			HLX_ATB_ApplyCountCorrection(client);
 		else if (client > 0 && g_hAtbAudit != INVALID_HANDLE && GetConVarBool(g_hAtbAudit))
 			LogToGame("[HLX-ATB-AUDIT] refused userid=%d reason=count_no_longer_unbalanced", GetClientUserId(client));

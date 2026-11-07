@@ -1098,11 +1098,13 @@ sub balance_player_swap_pending
 
 sub request_balance_player_swap
 {
-	my ($self, $entry, $counts_as_skill_balance, $allow_alive) = @_;
+	my ($self, $entry, $counts_as_skill_balance, $allow_alive, $allow_one_surplus) = @_;
 	my $key = $self->balance_player_key($entry);
 	return 0 if $self->balance_player_was_swapped($entry)
 		|| exists $self->{ba_pending_swaps}{$key};
-	return 0 if !$self->switch_player($entry->[8], $entry->[0], $allow_alive);
+	return 0 if !$self->switch_player(
+		$entry->[8], $entry->[0], $allow_alive, $allow_one_surplus,
+	);
 
 	$self->{ba_pending_swaps}{$key} = {
 		team => $entry->[3] eq "CT" ? "TERRORIST" : "CT",
@@ -1368,18 +1370,25 @@ sub map_bias_round_is_eligible
 
 sub switch_player
 {
-	my ($self, $playerid, $name, $allow_alive) = @_;
+	my ($self, $playerid, $name, $allow_alive, $allow_one_surplus) = @_;
 	return 0 if !$self->{swap_command};
 	my $rcmd = $self->{player_command_hint};
 	my $command = $self->{swap_command}." ".$self->format_userid($playerid);
-	$command .= " round_end" if $allow_alive;
+	if ($allow_alive) {
+		$command .= $allow_one_surplus
+			? " round_end_score_surplus"
+			: " round_end";
+	}
 	my $result = $self->dorcon($command);
 	return 0 if !defined($result);
 	if ($self->{player_command_hint} eq "") {
 		$rcmd = $self->{player_command};
 	}
 	if ($rcmd ne "") {
-		$self->dorcon(sprintf("%s %s %s", $rcmd, $self->format_userid($playerid), $self->quoteparam("HLstatsX:CE - You were switched to balance teams")));
+		my $hint = $allow_alive
+			? "HLstatsX:CE - A team-balance swap was requested for round end"
+			: "HLstatsX:CE - You were switched to balance teams";
+		$self->dorcon(sprintf("%s %s %s", $rcmd, $self->format_userid($playerid), $self->quoteparam($hint)));
 	}
 	# if ($self->{player_admin_command} ne "") {
 	# 	$self->dorcon(sprintf("%s %s",$self->{player_admin_command}, $self->quoteparam("HLstatsX:CE - $name was switched to balance teams")));
@@ -1771,10 +1780,14 @@ sub analyze_teams
 			next;
 		}
 		if ($self->request_balance_player_swap(
-			$entry, $count_as_skill_balance && !$entry->[9], $allow_alive
+			$entry, $count_as_skill_balance && !$entry->[9], $allow_alive,
+			$one_player_score_correction && $count_gap == 1,
 		)) {
 			my $destination_team = @{$entry}[3] eq "CT" ? "T" : "CT";
-			$self->messageAll("HLstatsX:CE - ATB - " . @{$entry}[0] . " switched [" . @{$entry}[3] . " → " . $destination_team . "] to balance team sizes.", 0, 1);
+			my $action = $allow_alive
+				? "requested [" . @{$entry}[3] . " → " . $destination_team . "] for round-end team balancing"
+				: "switched [" . @{$entry}[3] . " → " . $destination_team . "] to balance team sizes";
+			$self->messageAll("HLstatsX:CE - ATB - " . @{$entry}[0] . " $action.", 0, 1);
 			$action_done++;
 			$needed_players--;
 		} else {
